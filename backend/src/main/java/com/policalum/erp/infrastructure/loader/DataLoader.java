@@ -549,11 +549,6 @@ public class DataLoader implements CommandLineRunner {
 
     private Sede obtenerOCrearSede() {
         return sedeRepository.findById(SEDE_ID).orElseGet(() -> {
-            if (sedeRepository.count() > 0) {
-                Sede existente = sedeRepository.findAll().get(0);
-                log.info("Sede de trabajo: {} - {}", existente.getId(), existente.getNombre());
-                return existente;
-            }
             Sede sede = Sede.builder()
                     .nombre("Sede Principal")
                     .pais("Perú")
@@ -564,7 +559,8 @@ public class DataLoader implements CommandLineRunner {
                     .activa(true)
                     .build();
             sede.setId(SEDE_ID);
-            Sede guardada = sedeRepository.saveAndFlush(sede);;
+
+            Sede guardada = sedeRepository.saveAndFlush(sede);
             log.info("Sede inicial creada: {} - {}", guardada.getId(), guardada.getNombre());
             return guardada;
         });
