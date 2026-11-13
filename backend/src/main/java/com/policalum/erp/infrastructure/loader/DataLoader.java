@@ -548,22 +548,30 @@ public class DataLoader implements CommandLineRunner {
     // ================================================================
 
     private Sede obtenerOCrearSede() {
-        return sedeRepository.findById(SEDE_ID).orElseGet(() -> {
-            Sede sede = Sede.builder()
-                    .nombre("Sede Principal")
-                    .pais("Perú")
-                    .ciudad("Lima")
-                    .direccion("Av. Principal 100")
-                    .celularSede("999000000")
-                    .moneda("PEN")
-                    .activa(true)
-                    .build();
-            sede.setId(SEDE_ID);
+        // 1. Verificamos si ya existe en la base de datos por su ID fijo
+        if (sedeRepository.existsById(SEDE_ID)) {
+            // Si ya existe, la recuperamos directamente de la BD sin re-guardarla
+            Sede existente = sedeRepository.findById(SEDE_ID).get();
+            log.info("Sede encontrada y recuperada: {} - {}", existente.getId(), existente.getNombre());
+            return existente;
+        }
 
-            Sede guardada = sedeRepository.saveAndFlush(sede);
-            log.info("Sede inicial creada: {} - {}", guardada.getId(), guardada.getNombre());
-            return guardada;
-        });
+        // 2. Si no existe, creamos una nueva instancia limpia
+        Sede sede = Sede.builder()
+                .nombre("Sede Principal")
+                .pais("Perú")
+                .ciudad("Lima")
+                .direccion("Av. Principal 100")
+                .celularSede("999000000")
+                .moneda("PEN")
+                .activa(true)
+                .build();
+        sede.setId(SEDE_ID);
+
+        // 3. Guardado seguro inicial
+        Sede guardada = sedeRepository.saveAndFlush(sede);
+        log.info("Sede inicial creada: {} - {}", guardada.getId(), guardada.getNombre());
+        return guardada;
     }
 
     private void crearUsuarios(Sede sede) {
