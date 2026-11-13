@@ -36,12 +36,9 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -66,12 +63,12 @@ public class ExportacionServiceImpl {
     private final UserRepository userRepository;
     private final ReporteService reporteService;
     private final @Qualifier("reportes") Executor reportes;
-    private final @Lazy ExportacionServiceImpl self;
 
+    @Transactional(readOnly = true)
     public byte[] generar(String modulo, String formato, String filtros) {
         String usuario = usuarioActual();
         try {
-            return self.materializar(modulo, formato, filtros, usuario);
+            return materializar(modulo, formato, filtros, usuario);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -86,6 +83,16 @@ public class ExportacionServiceImpl {
             return PdfCorporativo.generar(solicitud, empresa());
         }
         return ExcelEstilos.generar(solicitud);
+    }
+
+    private String usuarioActual() {
+        try {
+            var auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+                return auth.getName();
+            }
+        } catch (Exception ignored) {}
+        return "Sistema";
     }
 
     private ReporteSolicitud armar(String modulo, String filtros, String usuario) {
@@ -487,18 +494,8 @@ public class ExportacionServiceImpl {
             try {
                 Path path = Path.of(ruta);
                 if (Files.exists(path)) return Files.readAllBytes(path);
-            } catch (Exception ignored) {
-                // El PDF se emite igual sin imagen.
-            }
+            } catch (Exception ignored) {}
         }
         return new byte[0];
-    }
-
-    private String usuarioActual() {
-        var auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getName() == null) return "";
-        return userRepository.findByEmailAndActivoTrue(auth.getName())
-                .map(user -> ((user.getNombre() == null ? "" : user.getNombre()) + " " + (user.getApellido() == null ? "" : user.getApellido())).trim())
-                .orElse(auth.getName());
     }
 }
