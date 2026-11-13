@@ -1,9 +1,9 @@
 export const environment = {
-  production: false,
+  production: true,
 
-  // API REST del backend
-  apiUrl: 'http://192.168.18.9:8080',
+  // URL pública de tu backend en la nube
+  apiUrl: 'https://policalumtest.onrender.com',
 
-  // Sitio web del frontend
-  sitioWebUrl: 'http://192.168.18.9:4201',
+  // URL de tu frontend en Vercel (puedes actualizarla cuando Vercel te dé tu enlace final)
+  sitioWebUrl: 'https://tu-proyecto.vercel.com',
 };
