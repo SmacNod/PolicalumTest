@@ -5,5 +5,5 @@ export const environment = {
   apiUrl: 'https://policalumtest.onrender.com',
 
   // URL de tu frontend en Vercel (puedes actualizarla cuando Vercel te dé tu enlace final)
-  sitioWebUrl: 'https://tu-proyecto.vercel.com',
+  sitioWebUrl: 'https://policalum-test.vercel.app',
 };
