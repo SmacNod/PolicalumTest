@@ -564,7 +564,7 @@ public class DataLoader implements CommandLineRunner {
                     .activa(true)
                     .build();
             sede.setId(SEDE_ID);
-            Sede guardada = sedeRepository.save(sede);
+            Sede guardada = sedeRepository.saveAndFlush(sede);;
             log.info("Sede inicial creada: {} - {}", guardada.getId(), guardada.getNombre());
             return guardada;
         });
