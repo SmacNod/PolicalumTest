@@ -1,0 +1,545 @@
+package com.policalum.erp.application.service.serviceImpl;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.policalum.erp.application.dto.request.CmsAjusteRequestDTO;
+import com.policalum.erp.application.dto.request.ColoresSitioDTO;
+import com.policalum.erp.application.dto.request.DiaAtencionDTO;
+import com.policalum.erp.application.dto.request.HorarioOperativoRequestDTO;
+import com.policalum.erp.application.dto.request.OfertaManualRequestDTO;
+import com.policalum.erp.application.dto.response.AtencionPublicaDTO;
+import com.policalum.erp.application.dto.response.CmsPublicoDTO;
+import com.policalum.erp.application.dto.response.DatoEmpresaSitioDTO;
+import com.policalum.erp.application.dto.response.EmpresaSitioDTO;
+import com.policalum.erp.application.dto.response.MaterialPublicoDTO;
+import com.policalum.erp.application.service.AtencionHorario;
+import com.policalum.erp.application.service.EmpresaSitioVinculo;
+import com.policalum.erp.application.service.PrecioComercial;
+import com.policalum.erp.domain.model.CatalogoFraccion;
+import com.policalum.erp.domain.model.CmsAjuste;
+import com.policalum.erp.domain.model.ConfiguracionEmpresa;
+import com.policalum.erp.domain.model.HorarioOperativo;
+import com.policalum.erp.domain.model.Producto;
+import com.policalum.erp.domain.model.Sede;
+import com.policalum.erp.exception.ResourceNotFoundException;
+import com.policalum.erp.infrastructure.repository.CmsAjusteRepository;
+import com.policalum.erp.infrastructure.repository.ConfiguracionEmpresaRepository;
+import com.policalum.erp.infrastructure.repository.HorarioOperativoRepository;
+import com.policalum.erp.infrastructure.repository.ProductoRepository;
+import com.policalum.erp.infrastructure.repository.SedeRepository;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class CmsService {
+
+    private static final List<String> SEMANA = List.of("LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO", "DOMINGO");
+    private static final TypeReference<List<DiaAtencionDTO>> DIAS = new TypeReference<>() {};
+    private static final TypeReference<List<MaterialPublicoDTO>> MATERIALES = new TypeReference<>() {};
+    private static final List<MaterialPublicoDTO> MATERIALES_BASE = List.of(
+            new MaterialPublicoDTO("espesor", "Espesor", "Compara el cuerpo de la plancha y elige el milimetraje según la luz del vano y la cubierta.", "/videos/espesor-poster.jpg", "/videos/espesor.mp4", true),
+            new MaterialPublicoDTO("colores", "Colores", "Transparente, humo, bronce y tonos de color para dosificar la luz y el carácter del ambiente.", "/videos/colores-poster.jpg", "/videos/colores.mp4", true),
+            new MaterialPublicoDTO("conectores", "Conectores H", "La unión entre planchas: un encuentro firme, alineado y del mismo tono del policarbonato.", "/videos/conectores-poster.jpg", "/videos/conectores.mp4", true),
+            new MaterialPublicoDTO("conectores-colores", "Conectores y colores", "Perfiles y tonos de policarbonato para unir la cubierta y dosificar la luz.", null, "/videos/conectores-colores.mp4", true),
+            new MaterialPublicoDTO("ubicanos", "Ubícanos", "La sede y el taller en Trujillo, para llegar, cotizar y recoger en persona.", null, "/videos/ubicanos.mp4", true),
+            new MaterialPublicoDTO("conector-blanco", "Conector blanco", "El perfil de unión en blanco, alineado con la plancha y listo para la cubierta.", null, "/videos/conector-blanco.mp4", true)
+    );
+
+    private final CmsAjusteRepository ajustes;
+    private final HorarioOperativoRepository horarios;
+    private final ProductoRepository productos;
+    private final ConfiguracionEmpresaRepository empresas;
+    private final SedeRepository sedes;
+    private final CmsPublicador publicador;
+    private final ObjectMapper json = new ObjectMapper();
+
+    @Transactional
+    public CmsPublicoDTO guardarAjustes(CmsAjusteRequestDTO request) {
+        CmsAjuste fila = asegurarAjuste();
+        fila.setColorPrimario(request.primaryColor().toUpperCase());
+        fila.setColorSecundario(request.secondaryColor().toUpperCase());
+        fila.setTamanoBase(request.baseFontSize());
+        fila.setModo(request.themeMode());
+        fila.setBanner(limpio(request.banner(), 180));
+        fila.setResumen(limpio(request.resumen(), 500));
+        fila.setHorarioSemana(limpio(request.horarioSemana(), 80));
+        fila.setHorarioSabado(limpio(request.horarioSabado(), 80));
+        fila.setFacebook(limpio(request.facebook(), 200));
+        fila.setInstagram(limpio(request.instagram(), 200));
+        fila.setLinkedin(limpio(request.linkedin(), 200));
+        fila.setYoutube(limpio(request.youtube(), 200));
+        fila.setCorreoSoporte(limpio(request.correoSoporte(), 150));
+        fila.setTextoPrivacidad(limpio(request.textoPrivacidad(), 4000));
+        fila.setTextoTerminos(limpio(request.textoTerminos(), 4000));
+        fila.setTextoGarantia(limpio(request.textoGarantia(), 4000));
+        fila.setTextoFaq(limpio(request.textoFaq(), 4000));
+        fila.setHeroKicker(limpio(request.heroKicker(), 80));
+        fila.setHeroTitulo(limpio(request.heroTitulo(), 180));
+        fila.setHeroTexto(limpio(request.heroTexto(), 400));
+        fila.setMaterialesKicker(limpio(request.materialesKicker(), 80));
+        fila.setMaterialesTitulo(limpio(request.materialesTitulo(), 180));
+        fila.setMaterialesTexto(limpio(request.materialesTexto(), 400));
+        if (request.colores() != null) {
+            ColoresSitioDTO colores = sanearColores(request.colores());
+            try {
+                fila.setColoresJson(json.writeValueAsString(colores));
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("No se pudo guardar la paleta");
+            }
+            fila.setColorPrimario(colores.dia().acento());
+            fila.setColorSecundario(colores.dia().tarjeta());
+        }
+        if (request.materiales() != null) {
+            List<MaterialPublicoDTO> materiales = normalizarMateriales(request.materiales());
+            try {
+                fila.setMaterialesJson(json.writeValueAsString(materiales));
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("No se pudieron guardar los materiales");
+            }
+        }
+        guardarIdentidad(fila, request);
+        ajustes.save(fila);
+        publicador.publicar("ajustes");
+        return publico();
+    }
+
+    @Transactional
+    public CmsPublicoDTO guardarHorario(HorarioOperativoRequestDTO request) {
+        HorarioOperativo fila = asegurarHorario();
+        fila.setMensaje(request.mensaje() == null ? "" : request.mensaje().trim());
+        if (request.avisoImagen() != null) {
+            fila.setAvisoImagen(limpio(request.avisoImagen(), 300));
+        }
+        boolean hayAviso = !fila.getMensaje().isBlank()
+                || (fila.getAvisoImagen() != null && !fila.getAvisoImagen().isBlank());
+        fila.setActivo(Boolean.TRUE.equals(request.activo()) && hayAviso);
+        if (request.dias() != null) {
+            validarDias(request.dias());
+            try {
+                fila.setHorarioJson(json.writeValueAsString(request.dias()));
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("No se pudo guardar el horario");
+            }
+            reflejarTextos(request.dias());
+        }
+        horarios.save(fila);
+        publicador.publicar("horario");
+        return leer();
+    }
+
+    @Transactional
+    public int sincronizarOfertas() {
+        LocalDateTime desde = LocalDateTime.now().minusDays(90);
+        int altas = productos.marcarOfertasEstancadas(desde);
+        productos.quitarOfertasConRotacion(desde);
+        publicador.publicar("catalogo");
+        return altas;
+    }
+
+    @Transactional
+    public void marcarOferta(UUID productoId, OfertaManualRequestDTO request) {
+        Producto producto = productos.findById(productoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado"));
+        if (!Boolean.TRUE.equals(request.oferta())) {
+            producto.setOferta(false);
+            producto.setOfertaManual(false);
+            producto.setPrecioOferta(null);
+            producto.setOfertaPorcentaje(null);
+            producto.setOfertaDesde(null);
+            producto.setOfertaHasta(null);
+            limpiarFracciones(producto);
+            productos.save(producto);
+            publicador.publicar("catalogo");
+            return;
+        }
+        BigDecimal base = producto.getPrecioVentaBase();
+        if (base == null || base.signum() <= 0) {
+            throw new IllegalArgumentException("El producto no tiene precio de venta");
+        }
+        BigDecimal oferta;
+        BigDecimal porcentaje;
+        if (request.precioOferta() != null) {
+            oferta = request.precioOferta().setScale(2, RoundingMode.HALF_UP);
+            if (oferta.signum() <= 0 || oferta.compareTo(base) >= 0) {
+                throw new IllegalArgumentException("El precio de oferta tiene que ser menor que el precio de venta");
+            }
+            porcentaje = base.subtract(oferta).multiply(new BigDecimal("100")).divide(base, 2, RoundingMode.HALF_UP);
+        } else if (request.porcentaje() != null) {
+            porcentaje = request.porcentaje().setScale(2, RoundingMode.HALF_UP);
+            oferta = base.multiply(BigDecimal.ONE.subtract(porcentaje.movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
+            if (oferta.signum() <= 0) {
+                throw new IllegalArgumentException("El descuento deja el precio en cero");
+            }
+        } else {
+            throw new IllegalArgumentException("Indica el porcentaje o el precio de oferta");
+        }
+        if (request.dias() == null) {
+            throw new IllegalArgumentException("Indica por cuántos días corre la oferta");
+        }
+        LocalDate hoy = LocalDate.now(PrecioComercial.LIMA);
+        producto.setPrecioOferta(oferta);
+        producto.setOfertaPorcentaje(porcentaje);
+        producto.setOfertaDesde(hoy);
+        producto.setOfertaHasta(hoy.plusDays(request.dias() - 1L));
+        producto.setOferta(true);
+        producto.setOfertaManual(true);
+        aplicarFracciones(producto, request, porcentaje);
+        productos.save(producto);
+        publicador.publicar("catalogo");
+    }
+
+    @Cacheable(cacheNames = "cms-publico", key = "'actual'")
+    @Transactional(readOnly = true)
+    public CmsPublicoDTO publico() {
+        return leer();
+    }
+
+    @Transactional(readOnly = true)
+    public CmsPublicoDTO actual() {
+        return leer();
+    }
+
+    @Transactional(readOnly = true)
+    public EmpresaSitioDTO empresaSitio() {
+        DatoEmpresaSitioDTO global = datoGlobal();
+        CmsAjuste ajuste = ajustes.findById(CmsAjuste.ID).orElse(null);
+        boolean propio = ajuste != null && Boolean.TRUE.equals(ajuste.getIdentidadPropia());
+        DatoEmpresaSitioDTO sitio = propio ? datoSitio(ajuste) : datoVisible(global);
+        DatoEmpresaSitioDTO origen = propio ? datoOrigen(ajuste) : global;
+        return new EmpresaSitioDTO(propio, sitio, global, propio
+                ? EmpresaSitioVinculo.propuestas(origen, global, sitio)
+                : List.of());
+    }
+
+    private CmsPublicoDTO leer() {
+        CmsAjuste ajuste = ajustes.findById(CmsAjuste.ID).orElse(null);
+        HorarioOperativo horario = horarios.findById(HorarioOperativo.ID).orElse(null);
+        String mensaje = horario == null || horario.getMensaje() == null ? "" : horario.getMensaje();
+        String avisoImagen = horario == null ? null : horario.getAvisoImagen();
+        boolean hayImagen = avisoImagen != null && !avisoImagen.isBlank();
+        boolean activo = horario != null && Boolean.TRUE.equals(horario.getActivo()) && (!mensaje.isBlank() || hayImagen);
+        List<DiaAtencionDTO> dias = leerDias(horario);
+        AtencionPublicaDTO atencion = AtencionHorario.evaluar(dias, LocalDateTime.now(PrecioComercial.LIMA));
+        return new CmsPublicoDTO(
+                ajuste == null || ajuste.getColorPrimario() == null ? "#1FA2D6" : ajuste.getColorPrimario(),
+                ajuste == null || ajuste.getColorSecundario() == null ? "#FFFFFF" : ajuste.getColorSecundario(),
+                ajuste == null || ajuste.getTamanoBase() == null ? 16 : ajuste.getTamanoBase(),
+                ajuste == null || ajuste.getModo() == null ? "aether" : ajuste.getModo(),
+                mensaje,
+                activo,
+                ajuste == null ? null : ajuste.getBanner(),
+                ajuste == null ? null : ajuste.getResumen(),
+                ajuste == null ? null : ajuste.getHorarioSemana(),
+                ajuste == null ? null : ajuste.getHorarioSabado(),
+                ajuste == null ? null : ajuste.getFacebook(),
+                ajuste == null ? null : ajuste.getInstagram(),
+                ajuste == null ? null : ajuste.getLinkedin(),
+                ajuste == null ? null : ajuste.getYoutube(),
+                ajuste == null ? null : ajuste.getCorreoSoporte(),
+                ajuste == null ? null : ajuste.getTextoPrivacidad(),
+                ajuste == null ? null : ajuste.getTextoTerminos(),
+                ajuste == null ? null : ajuste.getTextoGarantia(),
+                ajuste == null ? null : ajuste.getTextoFaq(),
+                ajuste == null ? null : ajuste.getHeroKicker(),
+                ajuste == null ? null : ajuste.getHeroTitulo(),
+                ajuste == null ? null : ajuste.getHeroTexto(),
+                ajuste == null ? null : ajuste.getMaterialesKicker(),
+                ajuste == null ? null : ajuste.getMaterialesTitulo(),
+                ajuste == null ? null : ajuste.getMaterialesTexto(),
+                leerMateriales(ajuste),
+                atencion,
+                dias,
+                hayImagen ? avisoImagen : null,
+                leerColores(ajuste));
+    }
+
+    private ColoresSitioDTO sanearColores(ColoresSitioDTO colores) {
+        return new ColoresSitioDTO(sanearPaleta(colores.dia()), sanearPaleta(colores.noche()));
+    }
+
+    private ColoresSitioDTO.PaletaColorDTO sanearPaleta(ColoresSitioDTO.PaletaColorDTO paleta) {
+        return new ColoresSitioDTO.PaletaColorDTO(
+                paleta.acento().toUpperCase(),
+                paleta.fondo().toUpperCase(),
+                paleta.tarjeta().toUpperCase(),
+                paleta.texto().toUpperCase(),
+                paleta.textoSuave().toUpperCase(),
+                paleta.oferta().toUpperCase(),
+                paleta.franja().toUpperCase());
+    }
+
+    private ColoresSitioDTO leerColores(CmsAjuste ajuste) {
+        if (ajuste == null || ajuste.getColoresJson() == null || ajuste.getColoresJson().isBlank()) return null;
+        try {
+            return json.readValue(ajuste.getColoresJson(), ColoresSitioDTO.class);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    private List<MaterialPublicoDTO> leerMateriales(CmsAjuste ajuste) {
+        if (ajuste == null || ajuste.getMaterialesJson() == null || ajuste.getMaterialesJson().isBlank()) {
+            return MATERIALES_BASE;
+        }
+        try {
+            List<MaterialPublicoDTO> lista = json.readValue(ajuste.getMaterialesJson(), MATERIALES);
+            return lista == null ? List.of() : lista;
+        } catch (JsonProcessingException e) {
+            return MATERIALES_BASE;
+        }
+    }
+
+    private List<MaterialPublicoDTO> normalizarMateriales(List<MaterialPublicoDTO> entrada) {
+        if (entrada.size() > 24) throw new IllegalArgumentException("Puedes publicar hasta 24 piezas del reel");
+        List<MaterialPublicoDTO> salida = new ArrayList<>();
+        Set<String> ids = new LinkedHashSet<>();
+        int n = 0;
+        for (MaterialPublicoDTO item : entrada) {
+            String nombre = limpio(item.nombre(), 80);
+            if (nombre == null) continue;
+            String imagen = urlMaterial(item.imagenUrl());
+            String video = urlMaterial(item.videoUrl());
+            if (imagen == null && video == null) continue;
+            String id = limpio(item.id(), 40);
+            if (id == null) id = "material-" + (++n);
+            id = id.toLowerCase().replaceAll("[^a-z0-9-]", "-").replaceAll("-{2,}", "-");
+            if (id.isBlank() || !ids.add(id)) id = "material-" + (++n);
+            salida.add(new MaterialPublicoDTO(
+                    id,
+                    nombre,
+                    limpio(item.resumen(), 240),
+                    imagen,
+                    video,
+                    item.activo()));
+        }
+        return salida;
+    }
+
+    private String urlMaterial(String valor) {
+        String texto = limpio(valor, 300);
+        if (texto == null) return null;
+        boolean ruta = texto.startsWith("/") && !texto.startsWith("//");
+        boolean web = texto.startsWith("https://") || texto.startsWith("http://");
+        if (!ruta && !web) throw new IllegalArgumentException("La foto o el video del material debe ser una ruta del sitio o una URL http");
+        return texto;
+    }
+
+    private List<DiaAtencionDTO> leerDias(HorarioOperativo horario) {
+        if (horario == null || horario.getHorarioJson() == null || horario.getHorarioJson().isBlank()) return List.of();
+        try {
+            List<DiaAtencionDTO> dias = json.readValue(horario.getHorarioJson(), DIAS);
+            return dias == null ? List.of() : dias;
+        } catch (JsonProcessingException e) {
+            return List.of();
+        }
+    }
+
+    private void validarDias(List<DiaAtencionDTO> dias) {
+        if (dias.size() != 7) throw new IllegalArgumentException("Indica los siete días de la semana");
+        Set<String> vistos = new LinkedHashSet<>();
+        for (DiaAtencionDTO dia : dias) {
+            if (!SEMANA.contains(dia.dia()) || !vistos.add(dia.dia())) {
+                throw new IllegalArgumentException("Cada día de la semana se indica una sola vez");
+            }
+            if (Boolean.TRUE.equals(dia.abierto())) {
+                if (dia.desde() == null || dia.desde().isBlank() || dia.hasta() == null || dia.hasta().isBlank()) {
+                    throw new IllegalArgumentException("Un día abierto necesita hora de inicio y de cierre");
+                }
+                if (!LocalTime.parse(dia.hasta()).isAfter(LocalTime.parse(dia.desde()))) {
+                    throw new IllegalArgumentException("La hora de cierre tiene que ser posterior a la de apertura");
+                }
+            }
+        }
+    }
+
+    private void reflejarTextos(List<DiaAtencionDTO> dias) {
+        CmsAjuste ajuste = asegurarAjuste();
+        ajuste.setHorarioSemana(textoDe(dias, List.of("LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES")));
+        ajuste.setHorarioSabado(textoDe(dias, List.of("SABADO")));
+        ajustes.save(ajuste);
+    }
+
+    private String textoDe(List<DiaAtencionDTO> dias, List<String> claves) {
+        List<String> partes = new ArrayList<>();
+        for (DiaAtencionDTO dia : dias) {
+            if (!claves.contains(dia.dia())) continue;
+            if (!Boolean.TRUE.equals(dia.abierto())) {
+                partes.add("Cerrado");
+                continue;
+            }
+            partes.add(dia.desde() + " a " + dia.hasta());
+        }
+        if (partes.isEmpty()) return null;
+        if (partes.stream().distinct().count() == 1) return cortar(partes.get(0));
+        return cortar(String.join(" · ", partes));
+    }
+
+    private String cortar(String texto) {
+        return texto.length() <= 80 ? texto : texto.substring(0, 80);
+    }
+
+    private String limpio(String valor, int maximo) {
+        if (valor == null) return null;
+        String texto = valor.trim();
+        if (texto.isEmpty()) return null;
+        return texto.length() <= maximo ? texto : texto.substring(0, maximo);
+    }
+
+    private void guardarIdentidad(CmsAjuste fila, CmsAjusteRequestDTO request) {
+        DatoEmpresaSitioDTO global = datoGlobal();
+        DatoEmpresaSitioDTO sitio = new DatoEmpresaSitioDTO(
+                limpio(request.nombreComercial(), 150),
+                limpio(request.razonSocial(), 200),
+                limpio(request.ruc(), 11),
+                limpio(request.telefono(), 20),
+                limpio(request.email(), 150),
+                limpio(request.direccionFiscal(), 300),
+                limpio(request.ubigeo(), 6));
+        boolean ya = Boolean.TRUE.equals(fila.getIdentidadPropia());
+        boolean vacio = sitio.nombreComercial() == null && sitio.razonSocial() == null && sitio.ruc() == null
+                && sitio.telefono() == null && sitio.email() == null && sitio.direccionFiscal() == null && sitio.ubigeo() == null;
+        if (!ya && vacio) return;
+        Set<String> descartados = request.descartados() == null ? Set.of() : new LinkedHashSet<>(request.descartados());
+        DatoEmpresaSitioDTO origen = EmpresaSitioVinculo.origenAlGuardar(datoOrigen(fila), global, sitio, descartados, ya);
+        fila.setWebNombre(sitio.nombreComercial());
+        fila.setWebRazonSocial(sitio.razonSocial());
+        fila.setWebRuc(sitio.ruc());
+        fila.setWebTelefono(sitio.telefono());
+        fila.setWebEmail(sitio.email());
+        fila.setWebDireccion(sitio.direccionFiscal());
+        fila.setWebUbigeo(sitio.ubigeo());
+        fila.setIdentidadPropia(true);
+        try {
+            fila.setOrigenEmpresa(json.writeValueAsString(origen));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("No se pudo recordar el vínculo con la configuración global");
+        }
+    }
+
+    private DatoEmpresaSitioDTO datoGlobal() {
+        ConfiguracionEmpresa empresa = empresas.findById(ConfiguracionEmpresa.ID_UNICO).orElse(null);
+        if (empresa == null) {
+            return new DatoEmpresaSitioDTO("POLICALUM", null, null, null, null, null, null);
+        }
+        String nombre = limpio(empresa.getNombreComercial(), 150);
+        return new DatoEmpresaSitioDTO(
+                nombre == null ? "POLICALUM" : nombre,
+                limpio(empresa.getRazonSocial(), 200),
+                limpio(empresa.getRuc(), 11),
+                limpio(empresa.getTelefono(), 20),
+                limpio(empresa.getEmail(), 150),
+                limpio(empresa.getDireccionFiscal(), 300),
+                limpio(empresa.getUbigeo(), 6));
+    }
+
+    private DatoEmpresaSitioDTO datoVisible(DatoEmpresaSitioDTO global) {
+        String telefono = global.telefono();
+        String direccion = global.direccionFiscal();
+        if ((telefono == null || telefono.isBlank()) || (direccion == null || direccion.isBlank())) {
+            Sede sede = sedes.findByActivaTrueOrderByNombreAsc().stream().findFirst().orElse(null);
+            if (sede != null) {
+                if (telefono == null || telefono.isBlank()) telefono = limpio(sede.getCelularSede(), 20);
+                if (direccion == null || direccion.isBlank()) direccion = limpio(unir(sede.getDireccion(), sede.getCiudad()), 300);
+            }
+        }
+        return new DatoEmpresaSitioDTO(
+                global.nombreComercial(),
+                global.razonSocial(),
+                global.ruc(),
+                telefono,
+                global.email(),
+                direccion,
+                global.ubigeo());
+    }
+
+    private static String unir(String direccion, String ciudad) {
+        if (direccion == null || direccion.isBlank()) return ciudad;
+        if (ciudad == null || ciudad.isBlank()) return direccion;
+        return direccion.trim() + ", " + ciudad.trim();
+    }
+
+    private DatoEmpresaSitioDTO datoSitio(CmsAjuste ajuste) {
+        return new DatoEmpresaSitioDTO(
+                ajuste.getWebNombre(),
+                ajuste.getWebRazonSocial(),
+                ajuste.getWebRuc(),
+                ajuste.getWebTelefono(),
+                ajuste.getWebEmail(),
+                ajuste.getWebDireccion(),
+                ajuste.getWebUbigeo());
+    }
+
+    private DatoEmpresaSitioDTO datoOrigen(CmsAjuste ajuste) {
+        if (ajuste == null || ajuste.getOrigenEmpresa() == null || ajuste.getOrigenEmpresa().isBlank()) {
+            return new DatoEmpresaSitioDTO(null, null, null, null, null, null, null);
+        }
+        try {
+            return json.readValue(ajuste.getOrigenEmpresa(), DatoEmpresaSitioDTO.class);
+        } catch (JsonProcessingException e) {
+            return new DatoEmpresaSitioDTO(null, null, null, null, null, null, null);
+        }
+    }
+
+    private CmsAjuste asegurarAjuste() {
+        return ajustes.findById(CmsAjuste.ID).orElseGet(() -> {
+            CmsAjuste nuevo = new CmsAjuste();
+            nuevo.setId(CmsAjuste.ID);
+            return ajustes.save(nuevo);
+        });
+    }
+
+    private void aplicarFracciones(Producto producto, OfertaManualRequestDTO request, BigDecimal porcentaje) {
+        if (producto.getFracciones() == null) return;
+        String alcance = request.alcanceFracciones() == null ? "TODAS" : request.alcanceFracciones().trim().toUpperCase(Locale.ROOT);
+        for (CatalogoFraccion fraccion : producto.getFracciones()) {
+            boolean entra = switch (alcance) {
+                case "NINGUNA" -> false;
+                case "ALGUNAS" -> request.fraccionIds() != null && request.fraccionIds().contains(fraccion.getId());
+                default -> true;
+            };
+            if (!entra || !Boolean.TRUE.equals(fraccion.getActivo())) {
+                fraccion.setEnOferta(false);
+                fraccion.setOfertaPorcentaje(null);
+                fraccion.setPrecioOferta(null);
+                continue;
+            }
+            BigDecimal lista = fraccion.getPrecioVenta() == null ? BigDecimal.ZERO : fraccion.getPrecioVenta();
+            BigDecimal oferta = lista.multiply(BigDecimal.ONE.subtract(porcentaje.movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
+            fraccion.setEnOferta(true);
+            fraccion.setOfertaPorcentaje(porcentaje);
+            fraccion.setPrecioOferta(oferta);
+        }
+    }
+
+    private void limpiarFracciones(Producto producto) {
+        if (producto.getFracciones() == null) return;
+        for (CatalogoFraccion fraccion : producto.getFracciones()) {
+            fraccion.setEnOferta(false);
+            fraccion.setOfertaPorcentaje(null);
+            fraccion.setPrecioOferta(null);
+        }
+    }
+
+    private HorarioOperativo asegurarHorario() {
+        return horarios.findById(HorarioOperativo.ID).orElseGet(() -> {
+            HorarioOperativo nuevo = new HorarioOperativo();
+            nuevo.setId(HorarioOperativo.ID);
+            return horarios.save(nuevo);
+        });
+    }
+}
