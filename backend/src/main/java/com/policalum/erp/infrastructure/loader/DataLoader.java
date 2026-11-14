@@ -51,15 +51,6 @@ public class DataLoader implements CommandLineRunner {
         crearRolSiNoExiste(RolNombre.ROLE_MULTIFUNCIONAL, crearPermisosMultifuncional());
     }
 
-    /**
-     * Si el rol no existe, lo crea. Si existe, hace merge DEEP:
-     * - Agrega módulos nuevos que falten.
-     * - Agrega acciones nuevas dentro de módulos existentes.
-     * - NO sobreescribe valores existentes (para no pisar decisiones del ADMIN).
-     *
-     * IMPORTANTE: los permisos en false que ya estén en BD se respetan.
-     * Para forzar la corrección completa, usar el script SQL de migración.
-     */
     private void crearRolSiNoExiste(RolNombre nombre, Map<String, Object> permisosJson) {
         Rol existente = rolRepository.findAll().stream()
                 .filter(rol -> rol.getNombre() == nombre)
@@ -144,13 +135,8 @@ public class DataLoader implements CommandLineRunner {
         return valor;
     }
 
-    // ================================================================
-    // PERMISOS ADMIN (dios: todo true en todos los módulos)
-    // ================================================================
     private Map<String, Object> crearPermisosAdmin() {
         Map<String, Object> permisos = new HashMap<>();
-
-        // Módulos administrativos
         permisos.put("sedes", permisosCrud());
         permisos.put("usuarios", permisosCrud());
         permisos.put("roles", permisosCrud());
@@ -158,8 +144,6 @@ public class DataLoader implements CommandLineRunner {
         permisos.put("auditoria", permisosCrud());
         permisos.put("finanzas", permisosFinanzasAdmin());
         permisos.put("reportes", permisosReportesAdmin());
-
-        // Módulos operativos
         permisos.put("productos", permisosCrud());
         permisos.put("servicios", permisosCrud());
         permisos.put("categorias", permisosCrud());
@@ -176,53 +160,37 @@ public class DataLoader implements CommandLineRunner {
         permisos.put("despachos", permisosDespachos());
         permisos.put("movilidades", permisosMovilidadesAdmin());
         permisos.put("caja", permisosCaja());
-
-        // Módulos RRHH
         permisos.put("rrhh", permisosRrhhAdmin());
         permisos.put("asistencia", permisosAsistencia());
-
-        // Módulos web
         permisos.put("mensajes_web", permisosMensajesWeb());
         permisos.put("notificaciones", permisosNotificaciones());
         permisos.put("sitio_web", permisosSitioWebAdmin());
-
         return permisos;
     }
 
-    // ================================================================
-    // PERMISOS MULTIFUNCIONAL
-    // Solo vender, asistencia, ver catálogo, integrar OC, ver stock.
-    // NO toca stock, NO finanzas, NO RRHH, NO configuración, NO usuarios.
-    // ================================================================
     private Map<String, Object> crearPermisosMultifuncional() {
         Map<String, Object> permisos = new HashMap<>();
-
-        // ---- Solo lectura del catálogo ----
         permisos.put("productos", permisosSoloLectura());
         permisos.put("servicios", permisosSoloLectura());
         permisos.put("categorias", permisosSoloLectura());
         permisos.put("fracciones", permisosSoloLectura());
         permisos.put("almacenes", permisosSoloLectura());
 
-        // ---- Inventario: solo ver, NO tocar stock ----
         Map<String, Boolean> inventario = new HashMap<>();
         inventario.put("leer", true);
         inventario.put("ajustar", false);
         inventario.put("transferir", false);
         permisos.put("inventario", inventario);
 
-        // ---- Ventas (sí vende, NO anula) ----
         Map<String, Boolean> ventas = new HashMap<>();
         ventas.put("leer", true);
         ventas.put("crear", true);
         ventas.put("anular", false);
         permisos.put("ventas", ventas);
 
-        // ---- Clientes y proveedores (CRUD sin eliminar) ----
         permisos.put("clientes", permisosCrudSinEliminar());
         permisos.put("proveedores", permisosCrudSinEliminar());
 
-        // ---- Compras: integra OC pero NO recibe ni anula ----
         Map<String, Boolean> compras = new HashMap<>();
         compras.put("leer", true);
         compras.put("crear", true);
@@ -232,7 +200,6 @@ public class DataLoader implements CommandLineRunner {
         compras.put("anular", false);
         permisos.put("compras", compras);
 
-        // ---- Cotizaciones y preformas (sin eliminar) ----
         Map<String, Boolean> cotizaciones = new HashMap<>();
         cotizaciones.put("leer", true);
         cotizaciones.put("crear", true);
@@ -250,7 +217,6 @@ public class DataLoader implements CommandLineRunner {
         preformas.put("cancelar", true);
         permisos.put("preformas", preformas);
 
-        // ---- Devoluciones: crea pero NO aprueba ni reembolsa ----
         Map<String, Boolean> devoluciones = new HashMap<>();
         devoluciones.put("leer", true);
         devoluciones.put("crear", true);
@@ -259,10 +225,8 @@ public class DataLoader implements CommandLineRunner {
         devoluciones.put("procesar_reembolso", false);
         permisos.put("devoluciones", devoluciones);
 
-        // ---- Despachos: su trabajo diario ----
         permisos.put("despachos", permisosDespachos());
 
-        // ---- Movilidades: solo ver ----
         Map<String, Boolean> movilidades = new HashMap<>();
         movilidades.put("leer", true);
         movilidades.put("crear", false);
@@ -271,10 +235,8 @@ public class DataLoader implements CommandLineRunner {
         movilidades.put("asignar_conductor", false);
         permisos.put("movilidades", movilidades);
 
-        // ---- Caja: su turno ----
         permisos.put("caja", permisosCaja());
 
-        // ---- RRHH: solo SU información ----
         Map<String, Boolean> rrhh = new HashMap<>();
         rrhh.put("ver_legajos", false);
         rrhh.put("gestionar_legajos", false);
@@ -285,17 +247,14 @@ public class DataLoader implements CommandLineRunner {
         rrhh.put("ver_mi_rrhh", true);
         permisos.put("rrhh", rrhh);
 
-        // ---- Asistencia: solo SU marcación ----
         Map<String, Boolean> asistencia = new HashMap<>();
         asistencia.put("marcar", true);
         asistencia.put("ver_mis_marcaciones", true);
         permisos.put("asistencia", asistencia);
 
-        // ---- Mensajes web: responde ----
         permisos.put("mensajes_web", permisosMensajesWeb());
         permisos.put("notificaciones", permisosNotificaciones());
 
-        // ---- Sitio web: solo ver ----
         Map<String, Boolean> sitioWeb = new HashMap<>();
         sitioWeb.put("leer", true);
         sitioWeb.put("configurar", false);
@@ -303,14 +262,12 @@ public class DataLoader implements CommandLineRunner {
         sitioWeb.put("gestionar_portafolio", false);
         permisos.put("sitio_web", sitioWeb);
 
-        // ---- Módulos que NO puede tocar (todo false explícito) ----
         Map<String, Boolean> todoFalse = permisosTodoFalse();
         permisos.put("finanzas", permisosFinanzasMultifuncional());
         permisos.put("auditoria", permisosSoloLecturaFalse());
         permisos.put("usuarios", todoFalse);
         permisos.put("roles", todoFalse);
 
-        // ---- Configuración: solo ver ----
         Map<String, Boolean> configuracion = new HashMap<>();
         configuracion.put("leer", true);
         configuracion.put("crear", false);
@@ -318,13 +275,11 @@ public class DataLoader implements CommandLineRunner {
         configuracion.put("eliminar", false);
         permisos.put("configuracion", configuracion);
 
-        // ---- Reportes: ver sin exportar ----
         Map<String, Boolean> reportes = new HashMap<>();
         reportes.put("leer", true);
         reportes.put("exportar", false);
         permisos.put("reportes", reportes);
 
-        // ---- Sedes: solo ver ----
         Map<String, Boolean> sedes = new HashMap<>();
         sedes.put("leer", true);
         sedes.put("crear", false);
@@ -334,10 +289,6 @@ public class DataLoader implements CommandLineRunner {
 
         return permisos;
     }
-
-    // ================================================================
-    // HELPERS
-    // ================================================================
 
     private Map<String, Boolean> permisosCrud() {
         Map<String, Boolean> p = new HashMap<>();
@@ -543,20 +494,13 @@ public class DataLoader implements CommandLineRunner {
         return p;
     }
 
-    // ================================================================
-    // SEDE Y USUARIOS (sin cambios)
-    // ================================================================
-
     private Sede obtenerOCrearSede() {
-        // 1. Verificamos si ya existe en la base de datos por su ID fijo
         if (sedeRepository.existsById(SEDE_ID)) {
-            // Si ya existe, la recuperamos directamente de la BD sin re-guardarla
             Sede existente = sedeRepository.findById(SEDE_ID).get();
             log.info("Sede encontrada y recuperada: {} - {}", existente.getId(), existente.getNombre());
             return existente;
         }
 
-        // 2. Si no existe, creamos una nueva instancia limpia
         Sede sede = Sede.builder()
                 .nombre("Sede Principal")
                 .pais("Perú")
@@ -568,7 +512,6 @@ public class DataLoader implements CommandLineRunner {
                 .build();
         sede.setId(SEDE_ID);
 
-        // 3. Guardado seguro inicial
         Sede guardada = sedeRepository.saveAndFlush(sede);
         log.info("Sede inicial creada: {} - {}", guardada.getId(), guardada.getNombre());
         return guardada;
@@ -596,16 +539,12 @@ public class DataLoader implements CommandLineRunner {
             String email, String nombre, String apellido, String nombreUsuario,
             String passwordRaw, String celular, Rol rol, Sede sede, boolean activo) {
 
-        if (userRepository.findByEmail(email).isPresent()) {
-            log.debug("ℹ️ Usuario ya existe: {}", email);
-            return;
-        }
+        // Verificación ultra defensiva: si ya existe por correo o nombre de usuario, se omite
+        boolean existe = userRepository.findByEmail(email).isPresent() ||
+                userRepository.findAll().stream().anyMatch(u -> nombreUsuario.equals(u.getNombreUsuario()));
 
-        boolean existeNombreUsuario = userRepository.findAll().stream()
-                .anyMatch(u -> nombreUsuario.equals(u.getNombreUsuario()));
-
-        if (existeNombreUsuario) {
-            log.debug("ℹ️ Usuario ya existe: {}", nombreUsuario);
+        if (existe) {
+            log.debug("ℹ️ Usuario ya existe en base de datos, omitiendo creación: {}", email);
             return;
         }
 
@@ -627,7 +566,6 @@ public class DataLoader implements CommandLineRunner {
                 .build();
 
         userRepository.save(user);
-        log.info("✅ Usuario creado: {} - {} (Rol: {}) - TOTP configurado: ✅",
-                email, nombreUsuario, rol.getNombre());
+        log.info("✅ Usuario creado: {} (Rol: {})", email, rol.getNombre());
     }
 }
