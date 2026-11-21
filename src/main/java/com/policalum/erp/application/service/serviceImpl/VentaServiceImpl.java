@@ -79,8 +79,14 @@ public class VentaServiceImpl implements VentaService {
             subtotal = subtotal.add(c.neto); igv = igv.add(c.igv); total = total.add(c.total);
             if (c.producto != null) {
                 BigDecimal salida = linea.cantidad().multiply(c.fraccion == null ? BigDecimal.ONE : c.fraccion.getFactorDescuentoKardex());
-                kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(c.producto, almacen, venta.getId(), TipoReferencia.VENTA,
-                        TipoMovimiento.SALIDA, salida, BigDecimal.ZERO, user, "Salida automática por venta " + venta.getSerieCorrelativo()));
+                kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
+                        c.producto.getId(),
+                        almacen.getId(),
+                        venta.getId(),
+                        TipoReferencia.VENTA,
+                        TipoMovimiento.SALIDA,
+                        salida,
+                        "Salida automática por venta " + venta.getSerieCorrelativo()));
             }
         }
         BigDecimal pagos = r.pagos().stream().map(PagoVentaCommandDTO::monto).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
@@ -100,7 +106,7 @@ public class VentaServiceImpl implements VentaService {
 
     @Override @Transactional(readOnly = true)
     public Page<VentaListadoResponseDTO> buscar(UUID sedeId, UUID userId, UUID clienteId, EstadoVenta estado,
-                                                  CanalVenta canal, LocalDateTime desde, LocalDateTime hasta, Pageable pageable) {
+                                                CanalVenta canal, LocalDateTime desde, LocalDateTime hasta, Pageable pageable) {
         if (desde != null && hasta != null && desde.isAfter(hasta)) throw new IllegalArgumentException("La fecha inicial no puede ser posterior a la fecha final");
         User actual = usuarioActual();
         UUID sedePermitida = esAdmin(actual) ? sedeId : sedeIdPermitida(actual, sedeId);
@@ -128,8 +134,13 @@ public class VentaServiceImpl implements VentaService {
         if (movimientos.isEmpty()) throw new IllegalStateException("No se encontró la salida de Kardex de la venta; no se puede anular de forma segura");
         for (KardexMovimiento movimiento : movimientos) {
             if (movimiento.getTipoMovimiento() != TipoMovimiento.SALIDA) continue;
-            kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(movimiento.getProducto(), movimiento.getAlmacen(), venta.getId(),
-                    TipoReferencia.DEVOLUCION, TipoMovimiento.ENTRADA, movimiento.getCantidadMovida(), BigDecimal.ZERO, usuario,
+            kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
+                    movimiento.getProducto().getId(),
+                    movimiento.getAlmacen().getId(),
+                    venta.getId(),
+                    TipoReferencia.DEVOLUCION,
+                    TipoMovimiento.ENTRADA,
+                    movimiento.getCantidadMovida(),
                     "Reversión por anulación de venta " + venta.getSerieCorrelativo() + ": " + request.motivo().trim()));
         }
         venta.setEstado(EstadoVenta.ANULADA);

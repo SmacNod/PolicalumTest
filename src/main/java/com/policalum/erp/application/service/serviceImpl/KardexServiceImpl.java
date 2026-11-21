@@ -93,19 +93,41 @@ public class KardexServiceImpl implements KardexService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public KardexMovimientoResponseDTO registrarMovimiento(KardexMovimientoRequestDTO dto) {
+        // 1) Validaciones de entrada
         if (dto.tipoMovimiento() != TipoMovimiento.ENTRADA && dto.tipoMovimiento() != TipoMovimiento.SALIDA) {
             throw new IllegalArgumentException("El tipo de movimiento es requerido");
         }
         if (dto.cantidadMovida() == null || dto.cantidadMovida().signum() <= 0) {
             throw new IllegalArgumentException("La cantidad movida debe ser mayor a cero");
         }
-        Producto producto = productoRepository.findById(dto.producto().getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado con ID: " + dto.producto().getId()));
+        if (dto.productoId() == null) throw new IllegalArgumentException("El producto es requerido");
+        if (dto.almacenId() == null) throw new IllegalArgumentException("El almacén es requerido");
 
-        Almacen almacen = almacenRepository.findById(dto.almacen().getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Almacén no encontrado con ID: " + dto.almacen().getId()));
+        // 2) Resolver entidades DENTRO del service
+        Producto producto = productoRepository.findById(dto.productoId())
+                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado: " + dto.productoId()));
+        Almacen almacen = almacenRepository.findById(dto.almacenId())
+                .orElseThrow(() -> new ResourceNotFoundException("Almacén no encontrado: " + dto.almacenId()));
 
-        // Módulo 10: FOR UPDATE, dos ventas simultáneas del mismo producto no deben pisarse el saldo
+        // 3) Almacén activo
+        if (!Boolean.TRUE.equals(almacen.getActivo())) {
+            throw new IllegalArgumentException("El almacén está inactivo");
+        }
+
+        // 4) Usuario SIEMPRE del token, nunca del DTO
+        User usuario = obtenerUsuarioAutenticado();
+        if (usuario == null) throw new IllegalStateException("Usuario autenticado no válido");
+
+        // 5) Sede autorizada (admin ve todo; los demás solo su sede)
+        boolean esAdmin = usuario.getRol() != null && usuario.getRol().getNombre() == RolNombre.ROLE_ADMIN;
+        if (!esAdmin) {
+            if (usuario.getSede() == null || almacen.getSede() == null
+                    || !usuario.getSede().getId().equals(almacen.getSede().getId())) {
+                throw new AccessDeniedException("No tiene acceso a un almacén de otra sede");
+            }
+        }
+
+        // 6) Bloqueo pesimista del stock (FOR UPDATE vía findParaActualizar)
         Stock stock = stockRepository.findParaActualizar(almacen.getId(), producto.getId())
                 .orElseGet(() -> crearStockInicial(producto, almacen));
 
@@ -114,23 +136,19 @@ public class KardexServiceImpl implements KardexService {
 
         if (dto.tipoMovimiento() == TipoMovimiento.ENTRADA) {
             stockNuevo = stockAnterior.add(dto.cantidadMovida());
-        } else if (dto.tipoMovimiento() == TipoMovimiento.SALIDA) {
-            if (stockAnterior.compareTo(dto.cantidadMovida()) < 0) {
+        } else {
+            // SALIDA: respetar permiteStockNegativo del producto
+            boolean permiteNegativo = Boolean.TRUE.equals(producto.getPermiteStockNegativo());
+            if (!permiteNegativo && stockAnterior.compareTo(dto.cantidadMovida()) < 0) {
                 throw new IllegalArgumentException("Stock insuficiente en el almacén. Stock actual: " + stockAnterior);
             }
             stockNuevo = stockAnterior.subtract(dto.cantidadMovida());
-        } else {
-            stockNuevo = dto.cantidadMovida();
         }
 
         stock.setCantidad(stockNuevo);
         stockRepository.save(stock);
 
-        User usuario = dto.user() != null ? dto.user() : obtenerUsuarioAutenticado();
-        if (usuario == null) {
-            throw new IllegalArgumentException("El usuario que realiza la operación es requerido.");
-        }
-
+        // 7) Crear movimiento (tipoReferencia AJUSTE por defecto si viene null)
         KardexMovimiento movimiento = KardexMovimiento.builder()
                 .producto(producto)
                 .almacen(almacen)
@@ -145,8 +163,7 @@ public class KardexServiceImpl implements KardexService {
                 .observacion(dto.observacion())
                 .build();
 
-        KardexMovimiento guardado = kardexRepository.save(movimiento);
-        return kardexMapper.toResponseDto(guardado);
+        return kardexMapper.toResponseDto(kardexRepository.save(movimiento));
     }
 
     @Override
@@ -171,21 +188,19 @@ public class KardexServiceImpl implements KardexService {
         Almacen almacenDestino = almacenRepository.findById(dto.almacenDestinoId())
                 .orElseThrow(() -> new ResourceNotFoundException("Almacén de destino no encontrado con ID: " + dto.almacenDestinoId()));
 
-        User usuario = obtenerUsuarioAutenticado();
+        // Bloqueo determinista (producto, almacén) para evitar deadlocks en transferencias cruzadas
         bloquearSaldosEnOrden(producto.getId(), almacenOrigen.getId(), almacenDestino.getId());
 
         String obsSalida = "Transferencia hacia " + almacenDestino.getNombre()
                 + (dto.motivo() != null ? " - " + dto.motivo() : "");
 
         KardexMovimientoRequestDTO salidaDTO = new KardexMovimientoRequestDTO(
-                producto,
-                almacenOrigen,
+                producto.getId(),
+                almacenOrigen.getId(),
                 referenciaId,
                 TipoReferencia.TRANSFERENCIA,
                 TipoMovimiento.SALIDA,
                 dto.cantidad(),
-                BigDecimal.ZERO,
-                usuario,
                 obsSalida
         );
         KardexMovimientoResponseDTO salidaResponse = registrarMovimiento(salidaDTO);
@@ -194,14 +209,12 @@ public class KardexServiceImpl implements KardexService {
                 + (dto.motivo() != null ? " - " + dto.motivo() : "");
 
         KardexMovimientoRequestDTO entradaDTO = new KardexMovimientoRequestDTO(
-                producto,
-                almacenDestino,
+                producto.getId(),
+                almacenDestino.getId(),
                 referenciaId,
                 TipoReferencia.TRANSFERENCIA,
                 TipoMovimiento.ENTRADA,
                 dto.cantidad(),
-                BigDecimal.ZERO,
-                usuario,
                 obsEntrada
         );
         KardexMovimientoResponseDTO entradaResponse = registrarMovimiento(entradaDTO);

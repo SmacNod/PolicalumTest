@@ -1,13 +1,13 @@
 # ==========================================
 # Etapa 1: Construcción (Build con Maven)
 # ==========================================
-FROM eclipse-temurin:17-jdk AS build
+FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
 
 COPY pom.xml .
 COPY src ./src
 
-# Aquí sí se compila porque esta imagen tiene Maven instalado
+# Compilación limpia omitiendo tests
 RUN mvn clean package -Dmaven.test.skip=true
 
 # ==========================================

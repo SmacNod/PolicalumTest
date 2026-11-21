@@ -299,14 +299,12 @@ public class CompraServiceImpl implements CompraService {
 
             BigDecimal stockPrevio = stockPrevio(detalle.getProducto().getId());
             kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
-                    detalle.getProducto(),
-                    detalle.getAlmacen(),
+                    detalle.getProducto().getId(),
+                    detalle.getAlmacen().getId(),
                     compra.getId(),
                     TipoReferencia.COMPRA,
                     TipoMovimiento.ENTRADA,
                     cantidadKardex,
-                    BigDecimal.ZERO,
-                    user,
                     "Entrada por compra " + compra.getNumeroOrdenCompra()
             ));
 

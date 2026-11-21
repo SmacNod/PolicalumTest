@@ -214,14 +214,24 @@ public class DevolucionServiceImpl implements DevolucionService {
             }
             d.setAlmacen(almacen);
             BigDecimal cantidad = d.getCantidadStock();
-            kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(d.getProducto(), almacen, dev.getId(),
-                    TipoReferencia.DEVOLUCION, TipoMovimiento.ENTRADA, cantidad, BigDecimal.ZERO, admin,
+            kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
+                    d.getProducto().getId(),
+                    almacen.getId(),
+                    dev.getId(),
+                    TipoReferencia.DEVOLUCION,
+                    TipoMovimiento.ENTRADA,
+                    cantidad,
                     "Devolución " + dev.getCodigo() + " (" + d.getEstadoProducto() + ") de venta " + venta.getSerieCorrelativo()));
             if (d.getEstadoProducto() == EstadoProducto.BUENO) {
                 reingresado = reingresado.add(cantidad);
             } else {
-                kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(d.getProducto(), almacen, dev.getId(),
-                        TipoReferencia.MERMA, TipoMovimiento.SALIDA, cantidad, BigDecimal.ZERO, admin,
+                kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
+                        d.getProducto().getId(),
+                        almacen.getId(),
+                        dev.getId(),
+                        TipoReferencia.MERMA,
+                        TipoMovimiento.SALIDA,
+                        cantidad,
                         "Merma por devolución " + dev.getCodigo() + ": producto " + d.getEstadoProducto()));
                 merma = merma.add(cantidad);
             }

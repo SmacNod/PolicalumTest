@@ -56,8 +56,17 @@ public class KardexController {
     @PreAuthorize("hasAnyRole('ADMIN','MULTIFUNCIONAL') and @rolePermissionGuard.permite(authentication, 'inventario', 'ajustar')")
     public ResponseEntity<KardexMovimientoResponseDTO> registrarMovimiento(
             @Valid @RequestBody KardexMovimientoRequestDTO dto) {
-        KardexMovimientoResponseDTO response = kardexService.registrarMovimiento(dto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        // Un ajuste manual nunca debe simular VENTA/COMPRA/DEVOLUCION/TRANSFERENCIA:
+        // se fuerza tipoReferencia=AJUSTE y sin referenciaId.
+        KardexMovimientoRequestDTO ajuste = new KardexMovimientoRequestDTO(
+                dto.productoId(),
+                dto.almacenId(),
+                null,
+                TipoReferencia.AJUSTE,
+                dto.tipoMovimiento(),
+                dto.cantidadMovida(),
+                dto.observacion());
+        return ResponseEntity.status(HttpStatus.CREATED).body(kardexService.registrarMovimiento(ajuste));
     }
 
     @PostMapping("/transferencias")
