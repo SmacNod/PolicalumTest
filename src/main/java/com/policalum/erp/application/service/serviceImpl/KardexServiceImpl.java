@@ -106,7 +106,7 @@ public class KardexServiceImpl implements KardexService {
         // 2) Resolver entidades DENTRO del service
         Producto producto = productoRepository.findById(dto.productoId())
                 .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado: " + dto.productoId()));
-        Almacen almacen = almacenRepository.findById(dto.almacenId())
+        Almacen almacen = almacenRepository.findWithSedeById(dto.almacenId())
                 .orElseThrow(() -> new ResourceNotFoundException("Almacén no encontrado: " + dto.almacenId()));
 
         // 3) Almacén activo
@@ -116,7 +116,7 @@ public class KardexServiceImpl implements KardexService {
 
         // 4) Usuario SIEMPRE del token, nunca del DTO
         User usuario = obtenerUsuarioAutenticado();
-        if (usuario == null) throw new IllegalStateException("Usuario autenticado no válido");
+        if (usuario == null) throw new IllegalArgumentException("Usuario autenticado no válido");
 
         // 5) Sede autorizada (admin ve todo; los demás solo su sede)
         boolean esAdmin = usuario.getRol() != null && usuario.getRol().getNombre() == RolNombre.ROLE_ADMIN;
@@ -175,6 +175,12 @@ public class KardexServiceImpl implements KardexService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public List<KardexMovimientoResponseDTO> registrarTransferencia(TransferenciaRequestDTO dto, UUID referenciaId) {
+        if (dto == null || dto.productoId() == null || dto.almacenOrigenId() == null || dto.almacenDestinoId() == null) {
+            throw new IllegalArgumentException("Producto y almacenes de origen/destino son requeridos");
+        }
+        if (dto.cantidad() == null || dto.cantidad().signum() <= 0) {
+            throw new IllegalArgumentException("La cantidad transferida debe ser mayor a cero");
+        }
         if (dto.almacenOrigenId().equals(dto.almacenDestinoId())) {
             throw new IllegalArgumentException("El almacén de origen y destino no pueden ser el mismo.");
         }
@@ -182,11 +188,14 @@ public class KardexServiceImpl implements KardexService {
         Producto producto = productoRepository.findById(dto.productoId())
                 .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado con ID: " + dto.productoId()));
 
-        Almacen almacenOrigen = almacenRepository.findById(dto.almacenOrigenId())
+        Almacen almacenOrigen = almacenRepository.findWithSedeById(dto.almacenOrigenId())
                 .orElseThrow(() -> new ResourceNotFoundException("Almacén de origen no encontrado con ID: " + dto.almacenOrigenId()));
 
-        Almacen almacenDestino = almacenRepository.findById(dto.almacenDestinoId())
+        Almacen almacenDestino = almacenRepository.findWithSedeById(dto.almacenDestinoId())
                 .orElseThrow(() -> new ResourceNotFoundException("Almacén de destino no encontrado con ID: " + dto.almacenDestinoId()));
+
+        validarAlmacenOperacion(almacenOrigen);
+        validarAlmacenOperacion(almacenDestino);
 
         // Bloqueo determinista (producto, almacén) para evitar deadlocks en transferencias cruzadas
         bloquearSaldosEnOrden(producto.getId(), almacenOrigen.getId(), almacenDestino.getId());
@@ -230,7 +239,12 @@ public class KardexServiceImpl implements KardexService {
             LocalDateTime fechaInicio,
             LocalDateTime fechaFin,
             Pageable pageable) {
-
+        UUID sedeId = sedeConsulta(almacenId, null);
+        if (almacenId == null && sedeId != null) {
+            return kardexRepository.buscarFiltrado(productoId, null, null, RangosConsulta.desde(fechaInicio), RangosConsulta.hasta(fechaFin), false,
+                    sedeId, null, sinOrden(pageable)).map(kardexMapper::toResponseDto);
+        }
+        if (almacenId != null) almacenConAcceso(almacenId);
         return kardexRepository.searchMovimientos(productoId, almacenId, RangosConsulta.desde(fechaInicio), RangosConsulta.hasta(fechaFin), pageable)
                 .map(kardexMapper::toResponseDto);
     }
@@ -242,13 +256,17 @@ public class KardexServiceImpl implements KardexService {
     public Page<KardexMovimientoDetalleDTO> buscarMovimientos(UUID productoId, UUID almacenId, TipoReferencia tipoReferencia,
                                                               LocalDate desde, LocalDate hasta, UUID sedeId, String busqueda, Pageable pageable) {
         Rango r = rango(desde, hasta);
+        UUID sedeAutorizada = sedeConsulta(almacenId, sedeId);
         return kardexRepository.buscarFiltrado(productoId, almacenId, tipoReferencia, r.inicio(), r.fin(), r.incluirSinFecha(),
-                sedeId, patronBusqueda(busqueda), sinOrden(pageable)).map(consultaMapper::toDetalleDto);
+                sedeAutorizada, patronBusqueda(busqueda), sinOrden(pageable)).map(consultaMapper::toDetalleDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public KardexMovimientoDetalleDTO obtenerMovimiento(UUID id) {
+        KardexMovimiento movimiento = kardexRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Movimiento de Kardex no encontrado: " + id));
+        exigirAccesoAlmacen(movimiento.getAlmacen());
         return kardexRepository.findDetalleById(id).map(consultaMapper::toDetalleDto)
                 .orElseThrow(() -> new ResourceNotFoundException("Movimiento de Kardex no encontrado: " + id));
     }
@@ -256,7 +274,8 @@ public class KardexServiceImpl implements KardexService {
     @Override
     @Transactional(readOnly = true)
     public Page<SaldoKardexDTO> saldos(UUID almacenId, UUID sedeId, String busqueda, boolean soloBajoMinimo, Pageable pageable) {
-        return stockRepository.buscarSaldos(null, almacenId, sedeId, patronBusqueda(busqueda), soloBajoMinimo, sinOrden(pageable))
+        UUID sedeAutorizada = sedeConsulta(almacenId, sedeId);
+        return stockRepository.buscarSaldos(null, almacenId, sedeAutorizada, patronBusqueda(busqueda), soloBajoMinimo, sinOrden(pageable))
                 .map(consultaMapper::toSaldoDto);
     }
 
@@ -265,16 +284,15 @@ public class KardexServiceImpl implements KardexService {
     public SaldosProductoDTO saldosPorProducto(UUID productoId) {
         Producto p = productoRepository.findById(productoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado: " + productoId));
-        List<SaldoKardexDTO> almacenes = saldosDeProducto(productoId, null);
+        UUID sedeId = sedeConsulta(null, null);
+        List<SaldoKardexDTO> almacenes = saldosDeProducto(productoId, null, sedeId);
         return new SaldosProductoDTO(p.getId(), p.getNombre(), p.getCodigoSku(), p.getUnidad(), sumar(almacenes), almacenes);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<SaldoKardexDTO> saldosPorAlmacen(UUID almacenId, String busqueda, boolean soloBajoMinimo, Pageable pageable) {
-        if (!almacenRepository.existsById(almacenId)) {
-            throw new ResourceNotFoundException("Almacén no encontrado: " + almacenId);
-        }
+        almacenConAcceso(almacenId);
         return saldos(almacenId, null, busqueda, soloBajoMinimo, pageable);
     }
 
@@ -289,7 +307,7 @@ public class KardexServiceImpl implements KardexService {
     @Transactional(readOnly = true)
     public ValorizacionKardexDTO valorizacionAlmacen(UUID almacenId) {
         exigirAdmin();
-        Almacen almacen = almacenRepository.findById(almacenId)
+        Almacen almacen = almacenRepository.findWithSedeById(almacenId)
                 .orElseThrow(() -> new ResourceNotFoundException("Almacén no encontrado: " + almacenId));
         return construirValorizacion(almacenId, almacen.getNombre(), null);
     }
@@ -325,7 +343,8 @@ public class KardexServiceImpl implements KardexService {
             throw new ResourceNotFoundException("Almacén no encontrado: " + almacenId);
         }
         Rango r = rango(desde, hasta);
-        List<SaldoKardexDTO> saldos = saldosDeProducto(productoId, almacenId);
+        UUID sedeId = sedeConsulta(almacenId, null);
+        List<SaldoKardexDTO> saldos = saldosDeProducto(productoId, almacenId, sedeId);
 
         BigDecimal entradas = BigDecimal.ZERO, salidas = BigDecimal.ZERO;
         for (TotalPorTipoMovimientoProjection t : kardexRepository.totalesPorTipo(productoId, almacenId, r.inicio(), r.fin(), r.incluirSinFecha())) {
@@ -414,8 +433,8 @@ public class KardexServiceImpl implements KardexService {
     }
 
     /** Todos los saldos de un producto (sin paginar: un producto está en pocos almacenes). */
-    private List<SaldoKardexDTO> saldosDeProducto(UUID productoId, UUID almacenId) {
-        return stockRepository.buscarSaldos(productoId, almacenId, null, null, false, Pageable.unpaged())
+    private List<SaldoKardexDTO> saldosDeProducto(UUID productoId, UUID almacenId, UUID sedeId) {
+        return stockRepository.buscarSaldos(productoId, almacenId, sedeId, null, false, Pageable.unpaged())
                 .map(consultaMapper::toSaldoDto).getContent();
     }
 
@@ -505,6 +524,47 @@ public class KardexServiceImpl implements KardexService {
         nuevoStock.setAlmacen(almacen);
         nuevoStock.setCantidad(BigDecimal.ZERO);
         return nuevoStock;
+    }
+
+    private UUID sedeConsulta(UUID almacenId, UUID sedeSolicitada) {
+        User usuario = obtenerUsuarioAutenticado();
+        if (usuario == null) throw new AccessDeniedException("Usuario autenticado no válido");
+        boolean admin = usuario.getRol() != null && usuario.getRol().getNombre() == RolNombre.ROLE_ADMIN;
+        if (admin) {
+            if (almacenId != null) almacenConAcceso(almacenId);
+            return sedeSolicitada;
+        }
+        UUID propia = usuario.getSede() != null ? usuario.getSede().getId() : null;
+        if (propia == null) throw new AccessDeniedException("Su usuario no tiene una sede asignada");
+        if (sedeSolicitada != null && !propia.equals(sedeSolicitada)) {
+            throw new AccessDeniedException("Solo puede consultar su propia sede");
+        }
+        if (almacenId != null) almacenConAcceso(almacenId);
+        return propia;
+    }
+
+    private void almacenConAcceso(UUID almacenId) {
+        Almacen almacen = almacenRepository.findWithSedeById(almacenId)
+                .orElseThrow(() -> new ResourceNotFoundException("Almacén no encontrado: " + almacenId));
+        if (!Boolean.TRUE.equals(almacen.getActivo())) throw new AccessDeniedException("El almacén está inactivo");
+        User usuario = obtenerUsuarioAutenticado();
+        boolean admin = usuario != null && usuario.getRol() != null && usuario.getRol().getNombre() == RolNombre.ROLE_ADMIN;
+        if (!admin && (usuario == null || usuario.getSede() == null || almacen.getSede() == null
+                || !usuario.getSede().getId().equals(almacen.getSede().getId()))) {
+            throw new AccessDeniedException("No tiene acceso a un almacén de otra sede");
+        }
+    }
+
+    private void exigirAccesoAlmacen(Almacen almacen) {
+        if (almacen == null) throw new AccessDeniedException("El movimiento no tiene almacén");
+        almacenConAcceso(almacen.getId());
+    }
+
+    private void validarAlmacenOperacion(Almacen almacen) {
+        if (!Boolean.TRUE.equals(almacen.getActivo())) {
+            throw new IllegalArgumentException("El almacén " + almacen.getNombre() + " está inactivo");
+        }
+        exigirAccesoAlmacen(almacen);
     }
 
     private User obtenerUsuarioAutenticado() {

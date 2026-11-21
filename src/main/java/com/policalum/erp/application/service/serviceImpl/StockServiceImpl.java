@@ -61,7 +61,10 @@ public class StockServiceImpl implements StockService {
     @Override
     @Transactional(readOnly = true)
     public List<StockResponseDTO> findByProducto(UUID productoId) {
-        return stockRepository.findByProducto_Id(productoId).stream()
+        User actual = usuarioActual();
+        UUID sedeId = esAdmin(actual) ? null : sedeActual(actual);
+        return (sedeId == null ? stockRepository.findByProducto_Id(productoId)
+                : stockRepository.findByProducto_IdAndAlmacen_Sede_Id(productoId, sedeId)).stream()
                 .map(stockMapper::toResponseDto)
                 .toList();
     }
@@ -69,8 +72,9 @@ public class StockServiceImpl implements StockService {
     @Override
     @Transactional(readOnly = true)
     public Page<StockResponseDTO> searchByAlmacen(UUID almacenId, String searchTerm, boolean soloBajoStock, Pageable pageable) {
+        Almacen almacen = almacenConAcceso(almacenId);
         String normalizedSearchTerm = searchTerm == null || searchTerm.isBlank() ? null : searchTerm.trim();
-        return stockRepository.searchByAlmacen(almacenId, normalizedSearchTerm, soloBajoStock, pageable)
+        return stockRepository.searchByAlmacen(almacen.getId(), normalizedSearchTerm, soloBajoStock, pageable)
                 .map(stockMapper::toResponseDto);
     }
 
@@ -90,10 +94,11 @@ public class StockServiceImpl implements StockService {
         }
 
         Almacen almacen = almacenConAcceso(dto.almacen().getId());
-        Producto producto = dto.producto();
-        if (producto == null || producto.getId() == null) {
+        if (dto.producto() == null || dto.producto().getId() == null) {
             throw new jakarta.validation.ValidationException("El producto es obligatorio");
         }
+        Producto producto = productoRepository.findById(dto.producto().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado: " + dto.producto().getId()));
 
         // Si no existe la fila, se crea en cero y se vuelve a leer: así la entrada completa
         // queda registrada como movimiento de kardex y no como un setter directo de cantidad.
@@ -116,14 +121,12 @@ public class StockServiceImpl implements StockService {
 
         if (diferencia.signum() != 0) {
             kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
-                    producto,
-                    almacen,
+                    producto.getId(),
+                    almacen.getId(),
                     null,
                     TipoReferencia.AJUSTE,
                     diferencia.signum() > 0 ? TipoMovimiento.ENTRADA : TipoMovimiento.SALIDA,
                     diferencia.abs(),
-                    objetivo,
-                    usuarioActual(),
                     "Carga directa de stock: " + anterior.stripTrailingZeros().toPlainString()
                             + " -> " + objetivo.stripTrailingZeros().toPlainString()));
         }
@@ -148,8 +151,7 @@ public Stock registrarStockInicial(UUID productoId,
     }
     Producto producto = productoRepository.findById(productoId)
             .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado"));
-    Almacen almacen = almacenRepository.findById(almacenId)
-            .orElseThrow(() -> new ResourceNotFoundException("Almacén no encontrado"));
+    Almacen almacen = almacenConAcceso(almacenId);
     if (Boolean.FALSE.equals(almacen.getActivo())) {
         throw new ValidationException("El almacén está inactivo");
     }
@@ -173,7 +175,9 @@ public Stock registrarStockInicial(UUID productoId,
 @Override
 @Transactional(readOnly = true)
 public List<ProductoStockResumenDTO> findResumenPorProducto(UUID productoId) {
-    return stockRepository.findConSedeByProducto(productoId).stream()
+    User actual = usuarioActual();
+    UUID sedeId = esAdmin(actual) ? null : sedeActual(actual);
+    return stockRepository.findConSedeByProducto(productoId, sedeId).stream()
             .map(s -> new ProductoStockResumenDTO(
                     s.getId(),
                     s.getAlmacen().getId(),
@@ -215,6 +219,13 @@ public List<ProductoStockResumenDTO> findResumenPorProducto(UUID productoId) {
 
     private boolean esAdmin(User user) {
         return user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN;
+    }
+
+    private UUID sedeActual(User user) {
+        if (user.getSede() == null || user.getSede().getId() == null) {
+            throw new AccessDeniedException("Su usuario no tiene una sede asignada");
+        }
+        return user.getSede().getId();
     }
 
     private User usuarioActual() {

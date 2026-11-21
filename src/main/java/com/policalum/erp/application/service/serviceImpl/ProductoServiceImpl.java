@@ -249,14 +249,12 @@ public class ProductoServiceImpl implements ProductoService {
 
         // Kardex de apertura. stockResultante = saldo real ya persistido, no 0.
         kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
-                producto,
-                stock.getAlmacen(),
+                producto.getId(),
+                stock.getAlmacen().getId(),
                 null,
                 TipoReferencia.APERTURA,
                 TipoMovimiento.ENTRADA,
                 stockInicial,
-                stock.getCantidad(),
-                null,
                 "Stock inicial por alta de producto. SKU " + producto.getCodigoSku()));
     }
 

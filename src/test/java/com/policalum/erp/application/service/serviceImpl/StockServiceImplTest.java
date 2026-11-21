@@ -20,6 +20,7 @@ import com.policalum.erp.domain.model.User;
 import com.policalum.erp.exception.ResourceNotFoundException;
 import com.policalum.erp.infrastructure.repository.AlmacenRepository;
 import com.policalum.erp.infrastructure.repository.StockRepository;
+import com.policalum.erp.infrastructure.repository.ProductoRepository;
 import com.policalum.erp.infrastructure.repository.UserRepository;
 import jakarta.validation.ValidationException;
 import java.math.BigDecimal;
@@ -38,6 +39,7 @@ import org.springframework.data.domain.*;
 class StockServiceImplTest {
 
     @Mock StockRepository stockRepository;
+    @Mock ProductoRepository productoRepository;
     @Mock StockMapper stockMapper;
     @Mock KardexService kardexService;
     @Mock AlmacenRepository almacenRepository;
@@ -60,6 +62,7 @@ class StockServiceImplTest {
                 new UsernamePasswordAuthenticationToken(actual.getEmail(), "test"));
         lenient().when(userRepository.findByEmailAndActivoTrue(actual.getEmail())).thenReturn(Optional.of(actual));
         lenient().when(almacenRepository.findWithSedeById(almacen.getId())).thenReturn(Optional.of(almacen));
+        lenient().when(productoRepository.findById(producto.getId())).thenReturn(Optional.of(producto));
         lenient().when(stockRepository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
 

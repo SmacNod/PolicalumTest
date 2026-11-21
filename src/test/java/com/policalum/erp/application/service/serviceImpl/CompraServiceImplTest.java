@@ -155,8 +155,8 @@ class CompraServiceImplTest {
         assertEquals(TipoReferencia.COMPRA, kardex.getValue().tipoReferencia());
         assertEquals(new BigDecimal("10"), kardex.getValue().cantidadMovida());
         assertEquals(c.getId(), kardex.getValue().referenciaId());
-        assertSame(producto, kardex.getValue().producto());
-        assertSame(almacen, kardex.getValue().almacen());
+        assertEquals(producto.getId(), kardex.getValue().productoId());
+        assertEquals(almacen.getId(), kardex.getValue().almacenId());
 
         ArgumentCaptor<FinanzasCuentaPorPagar> cxp = ArgumentCaptor.forClass(FinanzasCuentaPorPagar.class);
         verify(cuentaPorPagarRepository).save(cxp.capture());
@@ -327,7 +327,7 @@ class CompraServiceImplTest {
         assertEquals(TipoReferencia.COMPRA, kx.getValue().tipoReferencia());
         assertEquals(new BigDecimal("10"), kx.getValue().cantidadMovida());
         assertEquals(c.getId(), kx.getValue().referenciaId());
-        assertSame(admin, kx.getValue().user());
+        // El usuario se resuelve desde el contexto de seguridad.
 
         assertEquals(new BigDecimal("10"), d.getCantidadRecibida());
         assertEquals(new BigDecimal("100.0000"), producto.getPrecioCompra());

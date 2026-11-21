@@ -118,7 +118,7 @@ class ProductoImportacionServiceImplTest {
         verify(kardexService).registrarMovimiento(captor.capture());
         assertEquals(TipoMovimiento.ENTRADA, captor.getValue().tipoMovimiento());
         assertEquals(TipoReferencia.AJUSTE, captor.getValue().tipoReferencia());
-        assertEquals(almacen, captor.getValue().almacen());
+        assertEquals(almacen.getId(), captor.getValue().almacenId());
         assertEquals(new BigDecimal("6"), captor.getValue().cantidadMovida());
     }
 

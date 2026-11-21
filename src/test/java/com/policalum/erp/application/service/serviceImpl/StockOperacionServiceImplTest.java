@@ -119,7 +119,7 @@ class StockOperacionServiceImplTest {
         assertEquals(TipoMovimiento.ENTRADA, k.tipoMovimiento());
         assertEquals(new BigDecimal("3"), k.cantidadMovida());
         assertEquals(r.id(), k.referenciaId());
-        assertSame(actual, k.user());
+        // El usuario se resuelve dentro de KardexService desde SecurityContextHolder.
         assertEquals("AJ-" + LocalDate.now().getYear() + "-000007", r.codigo());
         assertEquals(new BigDecimal("10"), r.stockAnterior());
         assertEquals(new BigDecimal("13"), r.stockResultante());

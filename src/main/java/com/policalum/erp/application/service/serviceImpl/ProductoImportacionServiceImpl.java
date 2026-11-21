@@ -345,14 +345,12 @@ public class ProductoImportacionServiceImpl implements ProductoImportacionServic
         Producto producto = productoRepository.findById(productoId)
                 .orElseThrow(() -> new IllegalStateException("El producto recién creado no está disponible para el kardex"));
         kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
-                producto,
-                almacen,
+                producto.getId(),
+                almacen.getId(),
                 null,
                 TipoReferencia.AJUSTE,
                 TipoMovimiento.ENTRADA,
                 cantidad,
-                BigDecimal.ZERO,
-                null,
                 "Stock inicial por importación masiva. SKU " + sku));
     }
 

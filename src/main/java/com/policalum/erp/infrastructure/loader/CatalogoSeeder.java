@@ -143,14 +143,12 @@ public class CatalogoSeeder implements CommandLineRunner {
             if (almacen != null && operador != null && semilla.stock().signum() > 0) {
                 Producto producto = productoRepository.findById(creado.id()).orElseThrow();
                 kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
-                        producto,
-                        almacen,
+                        producto.getId(),
+                        almacen.getId(),
                         null,
                         TipoReferencia.AJUSTE,
                         TipoMovimiento.ENTRADA,
                         semilla.stock(),
-                        BigDecimal.ZERO,
-                        operador,
                         "Stock inicial del catálogo. SKU " + semilla.sku()));
             }
         }

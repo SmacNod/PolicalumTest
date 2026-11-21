@@ -147,7 +147,7 @@ class VentaServiceImplTest {
         assertEquals(TipoMovimiento.SALIDA, kx.getValue().tipoMovimiento());
         assertEquals(TipoReferencia.VENTA, kx.getValue().tipoReferencia());
         assertEquals(0, new BigDecimal("2").compareTo(kx.getValue().cantidadMovida()));
-        assertSame(almacen, kx.getValue().almacen());
+        assertEquals(almacen.getId(), kx.getValue().almacenId());
         assertEquals(r.id(), kx.getValue().referenciaId());
 
         ArgumentCaptor<DetalleVenta> det = ArgumentCaptor.forClass(DetalleVenta.class);

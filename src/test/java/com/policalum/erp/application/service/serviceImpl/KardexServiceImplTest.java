@@ -58,7 +58,7 @@ class KardexServiceImplTest {
                 .rol(Rol.builder().nombre(RolNombre.ROLE_ADMIN).build()).build();
         plancha = Producto.builder().id(UUID.randomUUID()).nombre("Policarbonato 6mm").codigoSku("PC-6").unidad("UNID")
                 .precioCompra(new BigDecimal("80.00")).build();
-        principal = Almacen.builder().id(UUID.randomUUID()).nombre("Principal")
+        principal = Almacen.builder().id(UUID.randomUUID()).nombre("Principal").activo(true)
                 .sede(Sede.builder().id(UUID.randomUUID()).nombre("Centro").build()).build();
         SecurityContext context = mock(SecurityContext.class);
         Authentication auth = mock(Authentication.class);
@@ -78,12 +78,12 @@ class KardexServiceImplTest {
 
     @Test
     void registrarMovimiento_bloqueaLaFilaDeStockYRechazaSalidaSinStock() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.of(principal));
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         Stock stock = Stock.builder().producto(plancha).almacen(principal).cantidad(new BigDecimal("3")).build();
         when(stockRepository.findParaActualizar(principal.getId(), plancha.getId())).thenReturn(Optional.of(stock));
 
         assertThrows(IllegalArgumentException.class, () -> service.registrarMovimiento(new KardexMovimientoRequestDTO(
-                plancha, principal, null, TipoReferencia.VENTA, TipoMovimiento.SALIDA, new BigDecimal("5"), BigDecimal.ZERO, admin, null)));
+                plancha.getId(), principal.getId(), null, TipoReferencia.VENTA, TipoMovimiento.SALIDA, new BigDecimal("5"), null)));
 
         verify(stockRepository).findParaActualizar(principal.getId(), plancha.getId());
         verify(stockRepository, never()).findByAlmacen_IdAndProducto_Id(any(), any());
@@ -94,7 +94,7 @@ class KardexServiceImplTest {
     @Test
     void registrarMovimiento_rechazaCantidadNegativaQueInflariaElStock() {
         assertThrows(IllegalArgumentException.class, () -> service.registrarMovimiento(new KardexMovimientoRequestDTO(
-                plancha, principal, null, TipoReferencia.VENTA, TipoMovimiento.SALIDA, new BigDecimal("-2"), BigDecimal.ZERO, admin, null)));
+                plancha.getId(), principal.getId(), null, TipoReferencia.VENTA, TipoMovimiento.SALIDA, new BigDecimal("-2"), null)));
 
         verify(stockRepository, never()).save(any());
         verify(kardexRepository, never()).save(any());
@@ -139,7 +139,6 @@ class KardexServiceImplTest {
     @Test
     void obtenerMovimiento_inexistente_lanzaNotFound() {
         UUID id = UUID.randomUUID();
-        when(kardexRepository.findDetalleById(id)).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class, () -> service.obtenerMovimiento(id));
     }
 
@@ -174,7 +173,6 @@ class KardexServiceImplTest {
     void saldosPorProductoOAlmacenInexistente_lanzaNotFound() {
         UUID otro = UUID.randomUUID();
         when(productoRepository.findById(otro)).thenReturn(Optional.empty());
-        when(almacenRepository.existsById(otro)).thenReturn(false);
 
         assertThrows(ResourceNotFoundException.class, () -> service.saldosPorProducto(otro));
         assertThrows(ResourceNotFoundException.class, () -> service.saldosPorAlmacen(otro, null, false, PageRequest.of(0, 20)));
@@ -203,7 +201,7 @@ class KardexServiceImplTest {
     @Test
     void valorizacionAlmacen_inexistenteONoAdmin() {
         UUID otro = UUID.randomUUID();
-        when(almacenRepository.findById(otro)).thenReturn(Optional.empty());
+        when(almacenRepository.findWithSedeById(otro)).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class, () -> service.valorizacionAlmacen(otro));
 
         admin.setRol(Rol.builder().nombre(RolNombre.ROLE_MULTIFUNCIONAL).build());
@@ -343,8 +341,8 @@ class KardexServiceImplTest {
     // ===================== REGISTRO: entradas, salidas y transferencias (auditoría de cobertura) =====================
 
     private Almacen almacen(String nombre) {
-        Almacen a = Almacen.builder().id(UUID.randomUUID()).nombre(nombre).sede(principal.getSede()).build();
-        lenient().when(almacenRepository.findById(a.getId())).thenReturn(Optional.of(a));
+        Almacen a = Almacen.builder().id(UUID.randomUUID()).nombre(nombre).activo(true).sede(principal.getSede()).build();
+        lenient().when(almacenRepository.findWithSedeById(a.getId())).thenReturn(Optional.of(a));
         return a;
     }
 
@@ -362,11 +360,11 @@ class KardexServiceImplTest {
 
     @Test
     void registrarMovimiento_entrada_sumaStockYGuardaStockResultante() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.of(principal));
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         Stock stock = stockEn(principal, "10");
 
-        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha, principal, null, TipoReferencia.COMPRA,
-                TipoMovimiento.ENTRADA, new BigDecimal("4.5"), BigDecimal.ZERO, admin, "OC-1"));
+        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha.getId(), principal.getId(), null, TipoReferencia.COMPRA,
+                TipoMovimiento.ENTRADA, new BigDecimal("4.5"), "OC-1"));
 
         assertEquals(new BigDecimal("14.5"), stock.getCantidad());
         verify(stockRepository).save(stock);
@@ -378,11 +376,11 @@ class KardexServiceImplTest {
 
     @Test
     void registrarMovimiento_salidaExactaAlStock_dejaCero() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.of(principal));
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         Stock stock = stockEn(principal, "5");
 
-        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha, principal, null, TipoReferencia.VENTA,
-                TipoMovimiento.SALIDA, new BigDecimal("5"), BigDecimal.ZERO, admin, null));
+        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha.getId(), principal.getId(), null, TipoReferencia.VENTA,
+                TipoMovimiento.SALIDA, new BigDecimal("5"), null));
 
         assertEquals(0, stock.getCantidad().signum());
         assertEquals(0, movimientoGuardado().getStockResultante().signum());
@@ -390,11 +388,11 @@ class KardexServiceImplTest {
 
     @Test
     void registrarMovimiento_sinFilaDeStock_creaStockInicialEnCero() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.of(principal));
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         when(stockRepository.findParaActualizar(principal.getId(), plancha.getId())).thenReturn(Optional.empty());
 
-        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha, principal, null, TipoReferencia.COMPRA,
-                TipoMovimiento.ENTRADA, new BigDecimal("3"), BigDecimal.ZERO, admin, null));
+        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha.getId(), principal.getId(), null, TipoReferencia.COMPRA,
+                TipoMovimiento.ENTRADA, new BigDecimal("3"), null));
 
         ArgumentCaptor<Stock> c = ArgumentCaptor.forClass(Stock.class);
         verify(stockRepository).save(c.capture());
@@ -405,21 +403,21 @@ class KardexServiceImplTest {
 
     @Test
     void registrarMovimiento_salidaSinFilaDeStock_lanzaStockInsuficiente() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.of(principal));
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         when(stockRepository.findParaActualizar(principal.getId(), plancha.getId())).thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class, () -> service.registrarMovimiento(new KardexMovimientoRequestDTO(
-                plancha, principal, null, TipoReferencia.VENTA, TipoMovimiento.SALIDA, BigDecimal.ONE, BigDecimal.ZERO, admin, null)));
+                plancha.getId(), principal.getId(), null, TipoReferencia.VENTA, TipoMovimiento.SALIDA, BigDecimal.ONE, null)));
         verify(stockRepository, never()).save(any());
     }
 
     @Test
     void registrarMovimiento_sinUsuarioEnDto_usaElAutenticadoYTipoReferenciaPorDefectoAjuste() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.of(principal));
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         stockEn(principal, "1");
 
-        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha, principal, null, null,
-                TipoMovimiento.ENTRADA, BigDecimal.ONE, BigDecimal.ZERO, null, null));
+        service.registrarMovimiento(new KardexMovimientoRequestDTO(plancha.getId(), principal.getId(), null, null,
+                TipoMovimiento.ENTRADA, BigDecimal.ONE, null));
 
         KardexMovimiento m = movimientoGuardado();
         assertSame(admin, m.getUser());
@@ -428,21 +426,21 @@ class KardexServiceImplTest {
 
     @Test
     void registrarMovimiento_sinUsuarioNiAutenticacion_lanzaIllegalArgument() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.of(principal));
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         stockEn(principal, "1");
         SecurityContextHolder.clearContext();
 
         assertThrows(IllegalArgumentException.class, () -> service.registrarMovimiento(new KardexMovimientoRequestDTO(
-                plancha, principal, null, null, TipoMovimiento.ENTRADA, BigDecimal.ONE, BigDecimal.ZERO, null, null)));
+                plancha.getId(), principal.getId(), null, null, TipoMovimiento.ENTRADA, BigDecimal.ONE, null)));
         verify(kardexRepository, never()).save(any());
     }
 
     @Test
     void registrarMovimiento_almacenInexistente_lanzaNotFound() {
-        when(almacenRepository.findById(principal.getId())).thenReturn(Optional.empty());
+        when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.registrarMovimiento(new KardexMovimientoRequestDTO(
-                plancha, principal, null, null, TipoMovimiento.ENTRADA, BigDecimal.ONE, BigDecimal.ZERO, admin, null)));
+                plancha.getId(), principal.getId(), null, null, TipoMovimiento.ENTRADA, BigDecimal.ONE, null)));
         verifyNoInteractions(stockRepository);
     }
 
@@ -521,7 +519,7 @@ class KardexServiceImplTest {
     void registrarTransferencia_destinoInexistente_lanzaNotFound() {
         Almacen origen = almacen("A");
         UUID destino = UUID.randomUUID();
-        when(almacenRepository.findById(destino)).thenReturn(Optional.empty());
+        when(almacenRepository.findWithSedeById(destino)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.registrarTransferencia(
                 new TransferenciaRequestDTO(plancha.getId(), origen.getId(), destino, BigDecimal.ONE, null, null)));

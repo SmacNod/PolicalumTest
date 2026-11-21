@@ -64,6 +64,17 @@ public class ExportacionServiceImpl {
     private final ReporteService reporteService;
     private final @Qualifier("reportes") Executor reportes;
 
+    /** Compatibilidad con consumidores de la versión anterior; el argumento legado se ignora. */
+    public ExportacionServiceImpl(ClienteRepository clienteRepository, ProductoRepository productoRepository,
+            StockRepository stockRepository, KardexRepository kardexRepository, VentaRepository ventaRepository,
+            CompraRepository compraRepository, GastoEmpresarialRepository gastoRepository,
+            RrhhNominaRepository nominaRepository, ConfiguracionEmpresaRepository empresaRepository,
+            UserRepository userRepository, ReporteService reporteService, Executor reportes, Object legado) {
+        this(clienteRepository, productoRepository, stockRepository, kardexRepository, ventaRepository,
+                compraRepository, gastoRepository, nominaRepository, empresaRepository, userRepository,
+                reporteService, reportes);
+    }
+
     @Transactional(readOnly = true)
     public byte[] generar(String modulo, String formato, String filtros) {
         String usuario = usuarioActual();

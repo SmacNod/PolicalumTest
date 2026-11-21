@@ -199,7 +199,7 @@ class DevolucionServiceImplTest {
         KardexMovimientoRequestDTO m = mov.getValue();
         assertEquals(TipoMovimiento.ENTRADA, m.tipoMovimiento());
         assertEquals(TipoReferencia.DEVOLUCION, m.tipoReferencia());
-        assertSame(almacen, m.almacen());
+        assertEquals(almacen.getId(), m.almacenId());
         assertEquals(devId, m.referenciaId());
         assertSame(almacen, det.getAlmacen());
         assertEquals(EstadoDevolucion.APROBADA, d.getEstado());

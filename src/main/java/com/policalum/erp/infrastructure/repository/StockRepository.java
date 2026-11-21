@@ -42,8 +42,10 @@ public interface StockRepository extends JpaRepository<Stock, UUID> {
      * Se usa en GET /api/v1/productos/{id}/stock.
      */
     @EntityGraph(attributePaths = {"almacen", "almacen.sede"})
-    @Query("SELECT s FROM Stock s WHERE s.producto.id = :productoId ORDER BY s.almacen.sede.nombre, s.almacen.nombre")
-    List<Stock> findConSedeByProducto(@Param("productoId") UUID productoId);
+    @Query("SELECT s FROM Stock s WHERE s.producto.id = :productoId AND "
+            + "(CAST(:sedeId AS string) IS NULL OR s.almacen.sede.id = :sedeId) "
+            + "ORDER BY s.almacen.sede.nombre, s.almacen.nombre")
+    List<Stock> findConSedeByProducto(@Param("productoId") UUID productoId, @Param("sedeId") UUID sedeId);
 
     @EntityGraph(attributePaths = {"producto", "almacen"})
     @Query("SELECT s FROM Stock s WHERE s.almacen.id = :almacenId AND " +

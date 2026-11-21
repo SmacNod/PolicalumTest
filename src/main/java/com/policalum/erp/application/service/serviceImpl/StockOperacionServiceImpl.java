@@ -127,7 +127,7 @@ public class StockOperacionServiceImpl implements StockOperacionService {
                 .user(actual).build());
 
         KardexMovimientoResponseDTO mov = kardexService.registrarMovimiento(new KardexMovimientoRequestDTO(
-                producto, almacen, ajuste.getId(), TipoReferencia.AJUSTE, tipo, cantidadAbs, BigDecimal.ZERO, actual,
+                producto.getId(), almacen.getId(), ajuste.getId(), TipoReferencia.AJUSTE, tipo, cantidadAbs,
                 ajuste.getCodigo() + " - " + motivo));
         ajuste.setStockResultante(mov.stockResultante());
         ajuste.setKardexMovimiento(kardexRepository.getReferenceById(mov.id()));
