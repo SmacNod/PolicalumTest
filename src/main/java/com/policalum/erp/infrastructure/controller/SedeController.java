@@ -60,6 +60,7 @@ public class SedeController {
     }
 
     @GetMapping("/imagenes")
+    @PreAuthorize("hasRole('ADMIN') and @rolePermissionGuard.permite(authentication, 'sedes', 'leer')")
     public ResponseEntity<Resource> verImagen(@RequestParam String ruta) {
         if (ruta == null || !ruta.startsWith("sedes/") || ruta.contains("..")) {
             return ResponseEntity.badRequest().build();

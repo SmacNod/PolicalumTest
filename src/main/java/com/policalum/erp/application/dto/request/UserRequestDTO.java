@@ -1,19 +1,17 @@
 package com.policalum.erp.application.dto.request;
 
-import com.policalum.erp.domain.model.Rol;
-import com.policalum.erp.domain.model.Sede;
-
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.UUID;
 
 public record UserRequestDTO(
 
-        @NotNull(message = "El rol es requerido") Rol rol,
+        @NotNull(message = "El rol es requerido") UUID rolId,
 
-        @NotNull(message = "La Sede es requerida") Sede sede,
+        @NotNull(message = "La sede es requerida") UUID sedeId,
 
         @NotBlank(message = "El nombre de usuario es requerido") @Size(min = 4, max = 20, message = "El nombre de usuario debe tener entre 4 y 20 caracteres") @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "El nombre de usuario solo puede contener letras, números y guiones bajos") String nombreUsuario,
 

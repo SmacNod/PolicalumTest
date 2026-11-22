@@ -16,7 +16,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface PagoVentaRepository extends JpaRepository<PagoVenta, UUID> {
-    @Query("select coalesce(sum(p.monto), 0) from PagoVenta p where p.venta.turnoCaja.id = :turnoId and p.metodoPago = :metodo")
+    @Query("select coalesce(sum(p.monto), 0) from PagoVenta p where p.venta.turnoCaja.id = :turnoId " +
+            "and p.metodoPago = :metodo and p.venta.estado = com.policalum.erp.domain.enums.EstadoVenta.COMPLETADA")
     BigDecimal sumMontoByTurnoAndMetodo(@Param("turnoId") UUID turnoId, @Param("metodo") MetodoPago metodo);
     List<PagoVenta> findByVenta_Id(UUID ventaId);
 

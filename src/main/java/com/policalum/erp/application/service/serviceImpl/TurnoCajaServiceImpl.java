@@ -6,9 +6,11 @@ import com.policalum.erp.application.dto.response.ResumenCierreCajaDTO;
 import com.policalum.erp.application.dto.response.TurnoAbiertoResponseDTO;
 import com.policalum.erp.application.dto.response.TurnoCajaResponseDTO;
 import com.policalum.erp.application.mapper.TurnoCajaMapper;
+import com.policalum.erp.application.service.AuditService;
 import com.policalum.erp.application.service.TurnoCajaService;
 import com.policalum.erp.domain.enums.EstadoTurno;
 import com.policalum.erp.domain.enums.MetodoPago;
+import com.policalum.erp.domain.enums.RolNombre;
 import com.policalum.erp.domain.enums.TipoCajaChica;
 import com.policalum.erp.domain.model.Sede;
 import com.policalum.erp.domain.model.TurnoCaja;
@@ -22,9 +24,12 @@ import com.policalum.erp.infrastructure.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.Map;
+import com.policalum.erp.domain.enums.AccionAudit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,16 +43,22 @@ public class TurnoCajaServiceImpl implements TurnoCajaService {
     private final PagoVentaRepository pagoRepository;
     private final MovimientoCajaChicaRepository cajaChicaRepository;
     private final TurnoCajaMapper mapper;
+    private final AuditService auditService;
 
     @Override @Transactional(rollbackFor = Exception.class)
     public TurnoCajaResponseDTO abrir(AperturaCajaRequestDTO request) {
         User user = usuarioActual();
         Sede sede = sedeRepository.findById(request.sedeId()).orElseThrow(() -> new ResourceNotFoundException("Sede no encontrada"));
-        turnoRepository.findByUser_IdAndSede_IdAndEstado(user.getId(), sede.getId(), EstadoTurno.ABIERTO)
-                .ifPresent(t -> { throw new IllegalStateException("El usuario ya tiene un turno abierto en esta sede"); });
+        exigirAccesoSede(user, sede);
+        if (turnoRepository.existsByUser_IdAndEstado(user.getId(), EstadoTurno.ABIERTO)) {
+            throw new IllegalStateException("El usuario ya tiene un turno abierto");
+        }
         TurnoCaja turno = TurnoCaja.builder().sede(sede).user(user).montoInicial(request.montoInicial())
                 .estado(EstadoTurno.ABIERTO).fechaApertura(LocalDateTime.now()).observaciones(request.observaciones()).build();
-        return mapper.toResponseDto(turnoRepository.save(turno));
+        TurnoCaja guardado = turnoRepository.save(turno);
+        auditService.registrar("turnos_caja", guardado.getId(), AccionAudit.INSERT,
+                Map.of("sedeId", sede.getId().toString(), "montoInicial", guardado.getMontoInicial()));
+        return mapper.toResponseDto(guardado);
     }
 
     @Override @Transactional(rollbackFor = Exception.class)
@@ -64,12 +75,16 @@ public class TurnoCajaServiceImpl implements TurnoCajaService {
                     ? request.observaciones() : actual + "\n[CIERRE] " + request.observaciones());
         }
         turnoRepository.save(turno);
+        auditService.registrar("turnos_caja", turno.getId(), AccionAudit.UPDATE,
+                Map.of("operacion", "CIERRE", "montoFinalDeclarado", request.montoFinalDeclarado(),
+                        "efectivoEsperado", resumen.esperado(), "diferencia", resumen.diferencia()));
         return resumen;
     }
 
     @Override @Transactional(readOnly = true)
     public ResumenCierreCajaDTO resumen(UUID turnoId) {
         TurnoCaja turno = turnoRepository.findById(turnoId).orElseThrow(() -> new ResourceNotFoundException("Turno no encontrado"));
+        exigirAccesoTurno(turno, usuarioActual());
         return construirResumen(turno, turno.getMontoFinalDeclarado());
     }
 
@@ -111,6 +126,23 @@ public class TurnoCajaServiceImpl implements TurnoCajaService {
     }
     private static BigDecimal cero(BigDecimal valor) {
         return valor == null ? BigDecimal.ZERO : valor;
+    }
+
+    private void exigirAccesoSede(User user, Sede sede) {
+        if (user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN) {
+            return;
+        }
+        if (user.getSede() == null || user.getSede().getId() == null
+                || !user.getSede().getId().equals(sede.getId())) {
+            throw new AccessDeniedException("No puede abrir caja en otra sede");
+        }
+    }
+
+    private void exigirAccesoTurno(TurnoCaja turno, User user) {
+        if (user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN) return;
+        if (turno.getUser() == null || !user.getId().equals(turno.getUser().getId())) {
+            throw new AccessDeniedException("No puede consultar el turno de otro usuario");
+        }
     }
 
     private User usuarioActual() {

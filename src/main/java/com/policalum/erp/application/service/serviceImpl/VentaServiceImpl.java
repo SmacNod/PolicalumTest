@@ -45,6 +45,7 @@ public class VentaServiceImpl implements VentaService {
     public VentaProcesadaResponseDTO registrar(RegistrarVentaRequestDTO r) {
         User user = usuarioActual();
         Sede sede = sedeRepository.findById(r.sedeId()).orElseThrow(() -> new ResourceNotFoundException("Sede no encontrada"));
+        exigirAccesoSede(user, sede);
         Almacen almacen = almacenRepository.findById(r.almacenId()).orElseThrow(() -> new ResourceNotFoundException("Almacén no encontrado"));
         if (!almacen.getSede().getId().equals(sede.getId())) throw new IllegalArgumentException("El almacén no pertenece a la sede indicada");
         TurnoCaja turno = turnoRepository.findById(r.turnoCajaId()).orElseThrow(() -> new ResourceNotFoundException("Turno no encontrado"));
@@ -203,7 +204,10 @@ public class VentaServiceImpl implements VentaService {
     }
     private void exigirAccesoSede(Venta venta) {
         User actual = usuarioActual();
-        if (!esAdmin(actual) && (venta.getSede() == null || !Objects.equals(sedeId(actual), venta.getSede().getId()))) {
+        exigirAccesoSede(actual, venta.getSede());
+    }
+    private void exigirAccesoSede(User actual, Sede sede) {
+        if (!esAdmin(actual) && (sede == null || !Objects.equals(sedeId(actual), sede.getId()))) {
             throw new AccessDeniedException("No tiene acceso a una venta de otra sede");
         }
     }

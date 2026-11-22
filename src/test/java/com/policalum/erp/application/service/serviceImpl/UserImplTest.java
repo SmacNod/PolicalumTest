@@ -53,7 +53,7 @@ class UserImplTest {
     }
 
     private UserRequestDTO request(String password, Boolean activo) {
-        return new UserRequestDTO(rol, sede, "ana_ruiz", "Ana", "Ruiz", "ana@policalum.com", password, "987654321", activo);
+        return new UserRequestDTO(rol.getId(), sede.getId(), "ana_ruiz", "Ana", "Ruiz", "ana@policalum.com", password, "987654321", activo);
     }
 
     private User existente() {
@@ -211,5 +211,23 @@ class UserImplTest {
         service.updateUser(u.getId(), request("Nueva123!", null));
 
         assertEquals(Boolean.TRUE, u.getActivo());
+    }
+
+    @Test
+    void updateUser_cambioDeRolInvalidaSesionesExistentes() {
+        User u = existente();
+        u.setRol(rol);
+        u.setSede(sede);
+        u.setSesionVersion(4);
+        Rol nuevoRol = Rol.builder().id(UUID.randomUUID()).nombre(RolNombre.ROLE_ADMIN).build();
+        when(rolRepository.findById(nuevoRol.getId())).thenReturn(Optional.of(nuevoRol));
+        UserRequestDTO cambioRol = new UserRequestDTO(nuevoRol.getId(), sede.getId(), "ana_ruiz", "Ana", "Ruiz",
+                "ana@policalum.com", null, "987654321", true);
+
+        service.updateUser(u.getId(), cambioRol);
+
+        assertEquals(5, u.getSesionVersion());
+        verify(refreshTokenRepository).revocarDe(u.getId());
+        verify(sesionUsuarioCache).invalidar("old@policalum.com");
     }
 }

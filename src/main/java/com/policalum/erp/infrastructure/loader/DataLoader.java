@@ -23,7 +23,7 @@ import java.util.UUID;
 
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true")
 @Order(0)
 @RequiredArgsConstructor
 public class DataLoader implements CommandLineRunner {

@@ -15,15 +15,15 @@ public interface UserMapper {
 
     UserResponseDTO toResponseDto(User user);
 
-    // Mapeos explícitos para asegurar que MapStruct no se pierda con las relaciones y los campos
-    @Mapping(target = "rol", source = "rol")
-    @Mapping(target = "sede", source = "sede")
-    @Mapping(target = "passwordHash", source = "passwordHash")
+    // Las relaciones y la contraseña se resuelven exclusivamente en UserImpl.
+    @Mapping(target = "rol", ignore = true)
+    @Mapping(target = "sede", ignore = true)
+    @Mapping(target = "passwordHash", ignore = true)
     User toEntity(UserRequestDTO userRequestDTO);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
-    @Mapping(target = "rol", source = "rol")
-    @Mapping(target = "sede", source = "sede")
-    @Mapping(target = "passwordHash", source = "passwordHash")
+    @Mapping(target = "rol", ignore = true)
+    @Mapping(target = "sede", ignore = true)
+    @Mapping(target = "passwordHash", ignore = true)
     void updateEntityFromDto(UserRequestDTO dto, @MappingTarget User user);
 }

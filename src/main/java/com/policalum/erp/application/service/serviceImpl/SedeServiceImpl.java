@@ -7,9 +7,12 @@ import com.policalum.erp.application.mapper.SedeMapper;
 import com.policalum.erp.application.service.FileStorageService;
 import com.policalum.erp.application.service.SedeService;
 import com.policalum.erp.domain.model.Sede;
+import com.policalum.erp.domain.model.User;
+import com.policalum.erp.domain.enums.RolNombre;
 import com.policalum.erp.exception.ResourceNotFoundException;
 import com.policalum.erp.infrastructure.geo.PeruGeocoder;
 import com.policalum.erp.infrastructure.repository.SedeRepository;
+import com.policalum.erp.infrastructure.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +21,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -31,6 +37,7 @@ import com.policalum.erp.util.HorarioUtil;
 public class SedeServiceImpl implements SedeService {
 
     private final SedeRepository sedeRepository;
+    private final UserRepository userRepository;
     private final SedeMapper sedeMapper;
     private final FileStorageService fileStorageService;
 
@@ -54,6 +61,8 @@ public class SedeServiceImpl implements SedeService {
 
     @Override
     public Page<SedeResponseDTO> listarTodas(Pageable pageable) {
+        User actual = usuarioActual();
+        if (!esAdmin(actual)) return paginaPropia(actual, pageable);
         return sedeRepository.findAll(pageable)
                 .map(sedeMapper::toResponseDto);
     }
@@ -61,6 +70,14 @@ public class SedeServiceImpl implements SedeService {
     @Override
     @org.springframework.cache.annotation.Cacheable(value = "sedes", key = "#activa + '-' + #pageable.pageNumber + '-' + #pageable.pageSize")
     public Page<SedeResponseDTO> listarPorEstado(Boolean activa, Pageable pageable) {
+        User actual = usuarioActual();
+        if (!esAdmin(actual)) {
+            if (actual.getSede() == null || actual.getSede().getId() == null
+                    || !Boolean.valueOf(activa).equals(actual.getSede().getActiva())) {
+                return new PageImpl<>(List.of(), pageable, 0);
+            }
+            return paginaPropia(actual, pageable);
+        }
         return sedeRepository.findByActiva(activa, pageable)
                 .map(sedeMapper::toResponseDto);
     }
@@ -69,6 +86,7 @@ public class SedeServiceImpl implements SedeService {
     public SedeResponseDTO buscarPorId(UUID id) {
         Sede sede = sedeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sede no encontrada con ID: " + id));
+        exigirAccesoSede(usuarioActual(), sede);
         return sedeMapper.toResponseDto(sede);
     }
 
@@ -107,6 +125,11 @@ public class SedeServiceImpl implements SedeService {
     @Override
     @Transactional
     public List<SedeMapaDTO> mapa() {
+        User actual = usuarioActual();
+        if (!esAdmin(actual)) {
+            if (actual.getSede() == null || !Boolean.TRUE.equals(actual.getSede().getActiva())) return List.of();
+            return List.of(aMapa(actual.getSede()));
+        }
         return sedeRepository.findByActiva(true, PageRequest.of(0, 500, Sort.by("nombre"))).getContent().stream()
                 .map(this::aMapa)
                 .toList();
@@ -168,5 +191,28 @@ public class SedeServiceImpl implements SedeService {
         }
         return new SedeMapaDTO(sede.getId(), sede.getNombre(), sede.getCiudad(), sede.getDireccion(),
                 latitud, longitud, sede.getImagen(), latitud != null && longitud != null);
+    }
+
+    private Page<SedeResponseDTO> paginaPropia(User user, Pageable pageable) {
+        if (user.getSede() == null || user.getSede().getId() == null || pageable.getPageNumber() > 0) {
+            return new PageImpl<>(List.of(), pageable, 0);
+        }
+        return new PageImpl<>(List.of(sedeMapper.toResponseDto(user.getSede())), pageable, 1);
+    }
+
+    private void exigirAccesoSede(User user, Sede sede) {
+        if (!esAdmin(user) && (user.getSede() == null || !user.getSede().getId().equals(sede.getId()))) {
+            throw new AccessDeniedException("No tiene acceso a otra sede");
+        }
+    }
+
+    private User usuarioActual() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByEmailAndActivoTrue(email)
+                .orElseThrow(() -> new IllegalStateException("Usuario autenticado no válido"));
+    }
+
+    private static boolean esAdmin(User user) {
+        return user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN;
     }
 }

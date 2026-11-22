@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -68,6 +70,7 @@ public class CompraServiceImpl implements CompraService {
 
         Sede sede = sedeRepository.findById(dto.sedeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sede no encontrada"));
+        exigirAccesoSede(user, sede);
 
         if (dto.fechaEmision() != null && dto.fechaEmision().isAfter(LocalDate.now())) {
             throw new ValidationException("La fecha de emisión no puede ser futura");
@@ -121,6 +124,8 @@ public class CompraServiceImpl implements CompraService {
     @Override
     public CompraResponseDTO actualizar(UUID id, CompraRequestDTO dto) {
         Compra compra = findCompra(id);
+        User user = usuarioActual();
+        exigirAccesoSede(user, compra.getSede());
 
         if (compra.getEstadoCompra() != EstadoCompra.BORRADOR) {
             throw new IllegalStateException("Solo se pueden editar compras en estado BORRADOR");
@@ -134,6 +139,7 @@ public class CompraServiceImpl implements CompraService {
 
         Sede sede = sedeRepository.findById(dto.sedeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sede no encontrada"));
+        exigirAccesoSede(user, sede);
 
         if (dto.fechaEmision() != null && dto.fechaEmision().isAfter(LocalDate.now())) {
             throw new ValidationException("La fecha de emisión no puede ser futura");
@@ -179,6 +185,7 @@ public class CompraServiceImpl implements CompraService {
     public CompraResponseDTO obtener(UUID id) {
         Compra compra = compraRepository.findWithDetailsById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Compra no encontrada"));
+        exigirAccesoSede(usuarioActual(), compra.getSede());
         return compraMapper.toResponseDto(compra);
     }
 
@@ -189,7 +196,9 @@ public class CompraServiceImpl implements CompraService {
     @Transactional(readOnly = true)
     public Page<CompraListadoDTO> buscar(UUID proveedorId, UUID sedeId, EstadoCompra estado,
                                          LocalDate desde, LocalDate hasta, Pageable pageable) {
-        return compraRepository.search(proveedorId, sedeId, estado, RangosConsulta.desde(desde), RangosConsulta.hasta(hasta), pageable)
+        User actual = usuarioActual();
+        UUID sedePermitida = sedePermitida(actual, sedeId);
+        return compraRepository.search(proveedorId, sedePermitida, estado, RangosConsulta.desde(desde), RangosConsulta.hasta(hasta), pageable)
                 .map(compraMapper::toListadoDto);
     }
 
@@ -198,7 +207,9 @@ public class CompraServiceImpl implements CompraService {
     // ==================================================================
     @Override
     public CompraResponseDTO recibir(UUID id, RecepcionCompraRequestDTO dto) {
-        Compra compra = findCompra(id);
+        Compra compra = compraRepository.findWithDetailsByIdParaActualizar(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Compra no encontrada con ID: " + id));
+        exigirAccesoSede(usuarioActual(), compra.getSede());
 
         if (compra.getEstadoCompra() != EstadoCompra.BORRADOR) {
             throw new IllegalStateException("Solo se pueden recibir compras en estado BORRADOR");
@@ -217,6 +228,7 @@ public class CompraServiceImpl implements CompraService {
     @Override
     public CompraResponseDTO anular(UUID id, AnularCompraRequestDTO dto) {
         Compra compra = findCompra(id);
+        exigirAccesoSede(usuarioActual(), compra.getSede());
 
         if (compra.getEstadoCompra() == EstadoCompra.ANULADA) {
             throw new IllegalStateException("La compra ya está anulada");
@@ -249,6 +261,7 @@ public class CompraServiceImpl implements CompraService {
     @Override
     public void eliminar(UUID id) {
         Compra compra = findCompra(id);
+        exigirAccesoSede(usuarioActual(), compra.getSede());
         if (compra.getEstadoCompra() != EstadoCompra.BORRADOR) {
             throw new IllegalStateException("Solo se pueden eliminar compras en estado BORRADOR");
         }
@@ -350,6 +363,32 @@ public class CompraServiceImpl implements CompraService {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmailAndActivoTrue(email)
                 .orElseThrow(() -> new IllegalStateException("Usuario autenticado no válido"));
+    }
+
+    private UUID sedePermitida(User user, UUID solicitada) {
+        if (esAdmin(user)) return solicitada;
+        UUID propia = sedePropia(user);
+        if (solicitada != null && !Objects.equals(propia, solicitada)) {
+            throw new AccessDeniedException("No tiene acceso a compras de otra sede");
+        }
+        return propia;
+    }
+
+    private void exigirAccesoSede(User user, Sede sede) {
+        if (!esAdmin(user) && (sede == null || !Objects.equals(sedePropia(user), sede.getId()))) {
+            throw new AccessDeniedException("No tiene acceso a compras de otra sede");
+        }
+    }
+
+    private boolean esAdmin(User user) {
+        return user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN;
+    }
+
+    private UUID sedePropia(User user) {
+        if (user.getSede() == null || user.getSede().getId() == null) {
+            throw new AccessDeniedException("El usuario no tiene una sede asignada");
+        }
+        return user.getSede().getId();
     }
 
     private String generarNumeroOrdenCompra() {

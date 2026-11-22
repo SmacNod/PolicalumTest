@@ -8,6 +8,7 @@ import com.policalum.erp.application.dto.request.AperturaCajaRequestDTO;
 import com.policalum.erp.application.dto.request.CierreCajaRequestDTO;
 import com.policalum.erp.application.dto.response.ResumenCierreCajaDTO;
 import com.policalum.erp.application.mapper.TurnoCajaMapper;
+import com.policalum.erp.application.service.AuditService;
 import com.policalum.erp.domain.enums.EstadoTurno;
 import com.policalum.erp.domain.enums.MetodoPago;
 import com.policalum.erp.domain.model.*;
@@ -33,6 +34,7 @@ class TurnoCajaServiceImplTest {
     @Mock PagoVentaRepository pagoRepository;
     @Mock MovimientoCajaChicaRepository cajaChicaRepository;
     @Mock TurnoCajaMapper mapper;
+    @Mock AuditService auditService;
     @InjectMocks TurnoCajaServiceImpl service;
 
     private static final String EMAIL = "cajero@policalum.com";
@@ -41,7 +43,8 @@ class TurnoCajaServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        cajero = User.builder().id(UUID.randomUUID()).email(EMAIL).build();
+        cajero = User.builder().id(UUID.randomUUID()).email(EMAIL)
+                .rol(Rol.builder().nombre(com.policalum.erp.domain.enums.RolNombre.ROLE_MULTIFUNCIONAL).build()).build();
         SecurityContext context = mock(SecurityContext.class);
         Authentication auth = mock(Authentication.class);
         lenient().when(auth.getName()).thenReturn(EMAIL);
@@ -49,6 +52,7 @@ class TurnoCajaServiceImplTest {
         SecurityContextHolder.setContext(context);
         lenient().when(userRepository.findByEmailAndActivoTrue(EMAIL)).thenReturn(Optional.of(cajero));
         sede = Sede.builder().id(UUID.randomUUID()).build();
+        cajero.setSede(sede);
         lenient().when(sedeRepository.findById(sede.getId())).thenReturn(Optional.of(sede));
         lenient().when(turnoRepository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
@@ -69,7 +73,7 @@ class TurnoCajaServiceImplTest {
 
     @Test
     void abrir_sinTurnoPrevio_creaTurnoAbiertoConMontoInicial() {
-        when(turnoRepository.findByUser_IdAndSede_IdAndEstado(cajero.getId(), sede.getId(), EstadoTurno.ABIERTO)).thenReturn(Optional.empty());
+        when(turnoRepository.existsByUser_IdAndEstado(cajero.getId(), EstadoTurno.ABIERTO)).thenReturn(false);
 
         service.abrir(new AperturaCajaRequestDTO(sede.getId(), new BigDecimal("150.00"), "Sencillo"));
 
@@ -86,8 +90,7 @@ class TurnoCajaServiceImplTest {
 
     @Test
     void abrir_yaTieneTurnoAbiertoEnLaSede_lanzaIllegalState() {
-        when(turnoRepository.findByUser_IdAndSede_IdAndEstado(cajero.getId(), sede.getId(), EstadoTurno.ABIERTO))
-                .thenReturn(Optional.of(TurnoCaja.builder().build()));
+        when(turnoRepository.existsByUser_IdAndEstado(cajero.getId(), EstadoTurno.ABIERTO)).thenReturn(true);
 
         assertThrows(IllegalStateException.class, () -> service.abrir(new AperturaCajaRequestDTO(sede.getId(), BigDecimal.ZERO, null)));
         verify(turnoRepository, never()).save(any());
@@ -99,6 +102,16 @@ class TurnoCajaServiceImplTest {
         when(sedeRepository.findById(otra)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.abrir(new AperturaCajaRequestDTO(otra, BigDecimal.ZERO, null)));
+    }
+
+    @Test
+    void abrir_sedeAjena_lanzaAccessDenied() {
+        Sede otra = Sede.builder().id(UUID.randomUUID()).build();
+        when(sedeRepository.findById(otra.getId())).thenReturn(Optional.of(otra));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> service.abrir(new AperturaCajaRequestDTO(otra.getId(), BigDecimal.ZERO, null)));
+        verify(turnoRepository, never()).save(any());
     }
 
     // ---------------------------------------------------------------- cerrar
@@ -222,7 +235,7 @@ class TurnoCajaServiceImplTest {
 
     @Test
     void resumen_turnoAbierto_sinDeclaradoNiDiferencia() {
-        TurnoCaja t = TurnoCaja.builder().id(UUID.randomUUID()).montoInicial(new BigDecimal("50.00")).build();
+        TurnoCaja t = TurnoCaja.builder().id(UUID.randomUUID()).montoInicial(new BigDecimal("50.00")).user(cajero).build();
         when(turnoRepository.findById(t.getId())).thenReturn(Optional.of(t));
         when(pagoRepository.sumMontoByTurnoAndMetodo(t.getId(), MetodoPago.EFECTIVO)).thenReturn(new BigDecimal("25.00"));
 
@@ -236,7 +249,7 @@ class TurnoCajaServiceImplTest {
     @Test
     void resumen_turnoCerrado_usaElDeclaradoGuardado() {
         TurnoCaja t = TurnoCaja.builder().id(UUID.randomUUID()).montoInicial(new BigDecimal("50.00"))
-                .montoFinalDeclarado(new BigDecimal("80.00")).estado(EstadoTurno.CERRADO).build();
+                .montoFinalDeclarado(new BigDecimal("80.00")).estado(EstadoTurno.CERRADO).user(cajero).build();
         when(turnoRepository.findById(t.getId())).thenReturn(Optional.of(t));
         when(pagoRepository.sumMontoByTurnoAndMetodo(t.getId(), MetodoPago.EFECTIVO)).thenReturn(new BigDecimal("25.00"));
 
@@ -249,5 +262,14 @@ class TurnoCajaServiceImplTest {
         when(turnoRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.resumen(id));
+    }
+
+    @Test
+    void resumen_turnoAjeno_lanzaAccessDenied() {
+        TurnoCaja t = TurnoCaja.builder().id(UUID.randomUUID()).montoInicial(BigDecimal.ZERO)
+                .user(User.builder().id(UUID.randomUUID()).build()).build();
+        when(turnoRepository.findById(t.getId())).thenReturn(Optional.of(t));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class, () -> service.resumen(t.getId()));
     }
 }

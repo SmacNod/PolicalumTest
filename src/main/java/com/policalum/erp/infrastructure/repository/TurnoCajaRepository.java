@@ -16,6 +16,9 @@ import org.springframework.data.repository.query.Param;
 public interface TurnoCajaRepository extends JpaRepository<TurnoCaja, UUID> {
     Optional<TurnoCaja> findByUser_IdAndSede_IdAndEstado(UUID userId, UUID sedeId, EstadoTurno estado);
 
+    /** A cashier may not operate two concurrent cash shifts, even across branches. */
+    boolean existsByUser_IdAndEstado(UUID userId, EstadoTurno estado);
+
     @Query("SELECT t FROM TurnoCaja t JOIN FETCH t.sede JOIN FETCH t.user WHERE t.user.id = :userId AND t.estado = com.policalum.erp.domain.enums.EstadoTurno.ABIERTO ORDER BY t.fechaApertura DESC")
     java.util.List<TurnoCaja> abiertosDe(@Param("userId") UUID userId);
 

@@ -255,6 +255,17 @@ class VentaServiceImplTest {
     }
 
     @Test
+    void registrar_multifuncionalEnSedeAjena_lanzaAccessDenied() {
+        Sede otra = Sede.builder().id(UUID.randomUUID()).nombre("Otra sede").build();
+        when(sedeRepository.findById(otra.getId())).thenReturn(Optional.of(otra));
+        RegistrarVentaRequestDTO ajena = new RegistrarVentaRequestDTO(otra.getId(), almacen.getId(), null, turno.getId(),
+                TipoComprobante.BOLETA, null, null, null, null, List.of(lineaProducto("1")), List.of(pago(MetodoPago.EFECTIVO, "59.00")));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class, () -> service.registrar(ajena));
+        verify(ventaRepository, never()).save(any());
+    }
+
+    @Test
     void registrar_lineaConProductoYServicio_lanzaIllegalArgument() {
         LineaVentaCommandDTO ambos = new LineaVentaCommandDTO(producto.getId(), null, servicio.getId(), BigDecimal.ONE);
 

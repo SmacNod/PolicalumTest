@@ -194,7 +194,7 @@ public class PerfilServiceImpl {
     }
 
     private void aplicarSede(User user, java.util.UUID sedeId) {
-        if (sedeId == null || sedeId.equals(user.getSede().getId())) return;
+        if (sedeId == null || (user.getSede() != null && sedeId.equals(user.getSede().getId()))) return;
         if (!esAdmin()) throw new IllegalArgumentException("Solo un administrador puede cambiar la sede asignada.");
         Sede sede = sedeRepository.findById(sedeId)
                 .orElseThrow(() -> new IllegalArgumentException("La sede seleccionada no existe."));

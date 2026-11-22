@@ -55,7 +55,8 @@ class CompraServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        admin = User.builder().id(UUID.randomUUID()).nombre("Miguel").email(EMAIL).build();
+        admin = User.builder().id(UUID.randomUUID()).nombre("Miguel").email(EMAIL)
+                .rol(Rol.builder().nombre(RolNombre.ROLE_ADMIN).build()).build();
         SecurityContext context = mock(SecurityContext.class);
         Authentication auth = mock(Authentication.class);
         lenient().when(auth.getName()).thenReturn(EMAIL);
@@ -64,6 +65,7 @@ class CompraServiceImplTest {
         lenient().when(userRepository.findByEmailAndActivoTrue(EMAIL)).thenReturn(Optional.of(admin));
 
         sede = Sede.builder().id(UUID.randomUUID()).nombre("Centro").build();
+        admin.setSede(sede);
         proveedor = Proveedor.builder().id(UUID.randomUUID()).nombreRazon("Aluminios SAC").activo(true).diasCredito(0).build();
         producto = Producto.builder().id(UUID.randomUUID()).nombre("Perfil 3/4").activo(true).build();
         almacen = Almacen.builder().id(UUID.randomUUID()).nombre("Principal").sede(sede).build();
@@ -108,6 +110,7 @@ class CompraServiceImplTest {
         c.setEstadoCompra(estado);
         c.setTotal(new BigDecimal("1180.00"));
         lenient().when(compraRepository.findWithDetailsById(c.getId())).thenReturn(Optional.of(c));
+        lenient().when(compraRepository.findWithDetailsByIdParaActualizar(c.getId())).thenReturn(Optional.of(c));
         return c;
     }
 
@@ -167,6 +170,19 @@ class CompraServiceImplTest {
         assertSame(proveedor, cxp.getValue().getProveedor());
         assertSame(sede, cxp.getValue().getSede());
         verify(auditService).registrar(eq("compras"), eq(c.getId()), eq(AccionAudit.INSERT), anyMap());
+    }
+
+    @Test
+    void crear_multifuncionalNoPuedeRegistrarCompraEnOtraSede() {
+        admin.setRol(Rol.builder().nombre(RolNombre.ROLE_MULTIFUNCIONAL).build());
+        Sede otra = Sede.builder().id(UUID.randomUUID()).nombre("Norte").build();
+        when(sedeRepository.findById(otra.getId())).thenReturn(Optional.of(otra));
+
+        CompraRequestDTO ajena = new CompraRequestDTO(proveedor.getId(), otra.getId(), "F001-123", HOY,
+                null, "obs", List.of(linea("118.00", "1")));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class, () -> service.crear(ajena));
+        verify(compraRepository, never()).save(any());
     }
 
     @Test

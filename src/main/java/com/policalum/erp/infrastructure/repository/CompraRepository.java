@@ -9,10 +9,12 @@ import com.policalum.erp.domain.model.Compra;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDate;
 import java.util.Optional;
@@ -46,6 +48,18 @@ public interface CompraRepository extends JpaRepository<Compra, UUID> {
             "LEFT JOIN FETCH c.user " +
             "WHERE c.id = :id")
     Optional<Compra> findWithDetailsById(@Param("id") UUID id);
+
+    /** Serializa la recepción para que una compra no genere dos entradas de Kardex ni dos CxP. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Compra c " +
+            "LEFT JOIN FETCH c.detalles d " +
+            "LEFT JOIN FETCH d.producto " +
+            "LEFT JOIN FETCH d.fraccion " +
+            "LEFT JOIN FETCH d.almacen " +
+            "LEFT JOIN FETCH c.proveedor " +
+            "LEFT JOIN FETCH c.sede " +
+            "WHERE c.id = :id")
+    Optional<Compra> findWithDetailsByIdParaActualizar(@Param("id") UUID id);
 
     @Query("SELECT COALESCE(MAX(CAST(SUBSTRING(c.numeroOrdenCompra, 9, 4) AS int)), 0) " +
             "FROM Compra c WHERE c.numeroOrdenCompra LIKE CONCAT('OC-', :year, '-%')")
