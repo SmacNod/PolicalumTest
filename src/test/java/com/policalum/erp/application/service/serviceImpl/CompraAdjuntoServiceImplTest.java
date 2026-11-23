@@ -49,7 +49,8 @@ class CompraAdjuntoServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        admin = User.builder().id(UUID.randomUUID()).nombre("Miguel").apellido("Dueño").email(EMAIL).build();
+        admin = User.builder().id(UUID.randomUUID()).nombre("Miguel").apellido("Dueño").email(EMAIL)
+                .rol(com.policalum.erp.domain.model.Rol.builder().nombre(com.policalum.erp.domain.enums.RolNombre.ROLE_ADMIN).build()).build();
         SecurityContext context = mock(SecurityContext.class);
         Authentication auth = mock(Authentication.class);
         lenient().when(auth.getName()).thenReturn(EMAIL);
@@ -149,13 +150,13 @@ class CompraAdjuntoServiceImplTest {
     }
 
     @Test
-    void descargar_adjuntoDeOtraCompra_lanzaFileStorageExceptionSinLeerDisco() {
+    void descargar_adjuntoDeOtraCompra_lanzaNotFoundSinLeerDisco() {
         Compra otra = new Compra();
         otra.setId(UUID.randomUUID());
         CompraAdjunto a = adjunto(otra);
         when(adjuntoRepository.findById(a.getId())).thenReturn(Optional.of(a));
 
-        assertThrows(FileStorageException.class, () -> service.descargar(compra.getId(), a.getId()));
+        assertThrows(ResourceNotFoundException.class, () -> service.descargar(compra.getId(), a.getId()));
         verifyNoInteractions(fileStorageService);
     }
 
@@ -193,13 +194,13 @@ class CompraAdjuntoServiceImplTest {
     }
 
     @Test
-    void eliminar_adjuntoDeOtraCompra_lanzaFileStorageExceptionSinBorrar() {
+    void eliminar_adjuntoDeOtraCompra_lanzaNotFoundSinBorrar() {
         Compra otra = new Compra();
         otra.setId(UUID.randomUUID());
         CompraAdjunto a = adjunto(otra);
         when(adjuntoRepository.findById(a.getId())).thenReturn(Optional.of(a));
 
-        assertThrows(FileStorageException.class, () -> service.eliminar(compra.getId(), a.getId()));
+        assertThrows(ResourceNotFoundException.class, () -> service.eliminar(compra.getId(), a.getId()));
         verify(adjuntoRepository, never()).delete(any());
         verifyNoInteractions(fileStorageService);
     }

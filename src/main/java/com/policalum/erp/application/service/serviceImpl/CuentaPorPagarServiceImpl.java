@@ -11,6 +11,7 @@ import com.policalum.erp.domain.enums.EstadoPago;
 import com.policalum.erp.domain.model.Compra;
 import com.policalum.erp.domain.model.FinanzasCuentaPorPagar;
 import com.policalum.erp.domain.model.PagoCuentaPorPagar;
+import com.policalum.erp.domain.model.Sede;
 import com.policalum.erp.domain.model.User;
 import com.policalum.erp.exception.ResourceNotFoundException;
 import com.policalum.erp.infrastructure.repository.CompraRepository;
@@ -23,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,14 +51,16 @@ public class CuentaPorPagarServiceImpl implements CuentaPorPagarService {
     @Transactional(readOnly = true)
     public Page<CuentaPorPagarResponseDTO> buscar(UUID sedeId, UUID proveedorId, EstadoCxP estado,
                                                   Boolean soloVencidas, Pageable pageable) {
-        return cuentaRepository.search(sedeId, proveedorId, estado, soloVencidas, pageable)
+        return cuentaRepository.search(sedeSolicitadaConAcceso(sedeId), proveedorId, estado, soloVencidas, pageable)
                 .map(this::toDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public CuentaPorPagarResponseDTO obtener(UUID id) {
-        return toDto(findById(id));
+        FinanzasCuentaPorPagar cxp = findById(id);
+        exigirAccesoSede(usuarioActual(), cxp.getSede());
+        return toDto(cxp);
     }
 
     @Override
@@ -64,6 +68,7 @@ public class CuentaPorPagarServiceImpl implements CuentaPorPagarService {
         // Módulo 6: FOR UPDATE para que dos pagos simultáneos no superen el saldo
         FinanzasCuentaPorPagar cxp = cuentaRepository.findByIdParaActualizar(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Cuenta por pagar no encontrada: " + id));
+        exigirAccesoSede(usuarioActual(), cxp.getSede());
 
         if (cxp.getEstado() == EstadoCxP.PAGADO) {
             throw new IllegalStateException("La cuenta por pagar ya está pagada en su totalidad");
@@ -134,6 +139,7 @@ public class CuentaPorPagarServiceImpl implements CuentaPorPagarService {
         FinanzasCuentaPorPagar cxp = cuentaRepository.findByCompra_Id(compraId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "No existe cuenta por pagar para la compra: " + compraId));
+        exigirAccesoSede(usuarioActual(), cxp.getSede());
         return toDto(cxp);
     }
 
@@ -141,7 +147,7 @@ public class CuentaPorPagarServiceImpl implements CuentaPorPagarService {
     @Transactional(readOnly = true)
     public List<CuentaPorPagarResponseDTO> vencidas(UUID sedeId) {
         Pageable unpaged = Pageable.unpaged();
-        return cuentaRepository.search(sedeId, null, null, true, unpaged)
+        return cuentaRepository.search(sedeSolicitadaConAcceso(sedeId), null, null, true, unpaged)
                 .stream().map(this::toDto).toList();
     }
 
@@ -150,7 +156,7 @@ public class CuentaPorPagarServiceImpl implements CuentaPorPagarService {
     public List<CuentaPorPagarResponseDTO> proximasAVencer(UUID sedeId, int dias) {
         LocalDate limite = LocalDate.now().plusDays(dias);
         Pageable unpaged = Pageable.unpaged();
-        return cuentaRepository.search(sedeId, null, EstadoCxP.PENDIENTE, false, unpaged)
+        return cuentaRepository.search(sedeSolicitadaConAcceso(sedeId), null, EstadoCxP.PENDIENTE, false, unpaged)
                 .stream()
                 .filter(c -> c.getFechaVencimiento() != null
                         && !c.getFechaVencimiento().isAfter(limite))
@@ -163,7 +169,7 @@ public class CuentaPorPagarServiceImpl implements CuentaPorPagarService {
     public ResumenCxPDashboardDTO dashboard(UUID sedeId) {
         Pageable unpaged = Pageable.unpaged();
         List<FinanzasCuentaPorPagar> todas = cuentaRepository
-                .search(sedeId, null, null, null, unpaged).getContent();
+                .search(sedeSolicitadaConAcceso(sedeId), null, null, null, unpaged).getContent();
 
         long pendientes = todas.stream().filter(c -> c.getEstado() == EstadoCxP.PENDIENTE).count();
         long parciales = todas.stream().filter(c -> c.getEstado() == EstadoCxP.PAGADO_PARCIAL).count();
@@ -209,6 +215,25 @@ public class CuentaPorPagarServiceImpl implements CuentaPorPagarService {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmailAndActivoTrue(email)
                 .orElseThrow(() -> new IllegalStateException("Usuario autenticado no válido"));
+    }
+
+    private void exigirAccesoSede(User user, Sede sede) {
+        if (user.getRol() != null && user.getRol().getNombre() == com.policalum.erp.domain.enums.RolNombre.ROLE_ADMIN) return;
+        if (user.getSede() == null || sede == null || !user.getSede().getId().equals(sede.getId())) {
+            throw new AccessDeniedException("No tiene acceso a otra sede");
+        }
+    }
+
+    private UUID sedeSolicitadaConAcceso(UUID sedeId) {
+        User user = usuarioActual();
+        if (user.getRol() != null && user.getRol().getNombre() == com.policalum.erp.domain.enums.RolNombre.ROLE_ADMIN) return sedeId;
+        if (user.getSede() == null || user.getSede().getId() == null) {
+            throw new AccessDeniedException("Su usuario no tiene una sede asignada");
+        }
+        if (sedeId != null && !user.getSede().getId().equals(sedeId)) {
+            throw new AccessDeniedException("No tiene acceso a otra sede");
+        }
+        return user.getSede().getId();
     }
 
     private CuentaPorPagarResponseDTO toDto(FinanzasCuentaPorPagar c) {

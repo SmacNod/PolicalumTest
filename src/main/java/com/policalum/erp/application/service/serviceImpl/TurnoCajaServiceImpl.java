@@ -121,7 +121,9 @@ public class TurnoCajaServiceImpl implements TurnoCajaService {
         // FOR UPDATE: un retiro de socio concurrente no puede colarse durante el cierre
         TurnoCaja turno = turnoRepository.findByIdParaActualizar(id).orElseThrow(() -> new ResourceNotFoundException("Turno no encontrado"));
         if (turno.getEstado() != EstadoTurno.ABIERTO) throw new IllegalStateException("El turno ya está cerrado");
-        if (!turno.getUser().getId().equals(usuarioActual().getId())) throw new IllegalStateException("Solo el responsable puede cerrar el turno");
+        if (!turno.getUser().getId().equals(usuarioActual().getId())) {
+            throw new AccessDeniedException("Solo el responsable puede cerrar el turno");
+        }
         return turno;
     }
     private static BigDecimal cero(BigDecimal valor) {

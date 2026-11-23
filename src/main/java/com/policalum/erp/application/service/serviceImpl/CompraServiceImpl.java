@@ -276,13 +276,15 @@ public class CompraServiceImpl implements CompraService {
     @Override
     @Transactional(readOnly = true)
     public Map<String, Object> dashboard() {
+        User actual = usuarioActual();
+        UUID sedeId = esAdmin(actual) ? null : sedePropia(actual);
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalCompras", compraRepository.count());
-        stats.put("comprasBorrador", compraRepository.countByEstadoCompra(EstadoCompra.BORRADOR));
-        stats.put("comprasRecibidas", compraRepository.countByEstadoCompra(EstadoCompra.RECIBIDA));
-        stats.put("comprasAnuladas", compraRepository.countByEstadoCompra(EstadoCompra.ANULADA));
-        stats.put("cxpPendientes", cuentaPorPagarRepository.countByEstado(EstadoCxP.PENDIENTE));
-        stats.put("cxpPagadas", cuentaPorPagarRepository.countByEstado(EstadoCxP.PAGADO));
+        stats.put("totalCompras", sedeId == null ? compraRepository.count() : compraRepository.countBySede_Id(sedeId));
+        stats.put("comprasBorrador", sedeId == null ? compraRepository.countByEstadoCompra(EstadoCompra.BORRADOR) : compraRepository.countBySede_IdAndEstadoCompra(sedeId, EstadoCompra.BORRADOR));
+        stats.put("comprasRecibidas", sedeId == null ? compraRepository.countByEstadoCompra(EstadoCompra.RECIBIDA) : compraRepository.countBySede_IdAndEstadoCompra(sedeId, EstadoCompra.RECIBIDA));
+        stats.put("comprasAnuladas", sedeId == null ? compraRepository.countByEstadoCompra(EstadoCompra.ANULADA) : compraRepository.countBySede_IdAndEstadoCompra(sedeId, EstadoCompra.ANULADA));
+        stats.put("cxpPendientes", sedeId == null ? cuentaPorPagarRepository.countByEstado(EstadoCxP.PENDIENTE) : cuentaPorPagarRepository.countBySede_IdAndEstado(sedeId, EstadoCxP.PENDIENTE));
+        stats.put("cxpPagadas", sedeId == null ? cuentaPorPagarRepository.countByEstado(EstadoCxP.PAGADO) : cuentaPorPagarRepository.countBySede_IdAndEstado(sedeId, EstadoCxP.PAGADO));
         return stats;
     }
 

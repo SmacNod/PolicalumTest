@@ -67,6 +67,10 @@ public interface CompraRepository extends JpaRepository<Compra, UUID> {
 
     long countByEstadoCompra(EstadoCompra estado);
 
+    long countBySede_Id(UUID sedeId);
+
+    long countBySede_IdAndEstadoCompra(UUID sedeId, EstadoCompra estado);
+
     @EntityGraph(attributePaths = {"proveedor", "sede", "user"})
     Page<Compra> findByEstadoCompraOrderByCreatedAtDesc(EstadoCompra estado, Pageable pageable);
 

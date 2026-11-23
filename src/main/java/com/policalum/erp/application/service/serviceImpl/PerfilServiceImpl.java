@@ -23,6 +23,7 @@ import java.util.Locale;
 import java.util.Set;
 import org.springframework.core.io.Resource;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,7 +71,7 @@ public class PerfilServiceImpl {
         String email = request.email().trim();
         userRepository.findByEmail(email)
                 .filter(otro -> !otro.getId().equals(user.getId()))
-                .ifPresent(otro -> { throw new IllegalArgumentException("Ese correo ya está registrado."); });
+                .ifPresent(otro -> { throw new IllegalStateException("Ese correo ya está registrado."); });
 
         user.setNombre(request.nombre().trim());
         user.setApellido(request.apellido().trim());
@@ -195,7 +196,7 @@ public class PerfilServiceImpl {
 
     private void aplicarSede(User user, java.util.UUID sedeId) {
         if (sedeId == null || (user.getSede() != null && sedeId.equals(user.getSede().getId()))) return;
-        if (!esAdmin()) throw new IllegalArgumentException("Solo un administrador puede cambiar la sede asignada.");
+        if (!esAdmin()) throw new AccessDeniedException("Solo un administrador puede cambiar la sede asignada.");
         Sede sede = sedeRepository.findById(sedeId)
                 .orElseThrow(() -> new IllegalArgumentException("La sede seleccionada no existe."));
         user.setSede(sede);
@@ -203,7 +204,7 @@ public class PerfilServiceImpl {
 
     private void aplicarLaboral(User user, BigDecimal sueldo, Integer diaCobro) {
         if (sueldo == null && diaCobro == null) return;
-        if (!esAdmin()) throw new IllegalArgumentException("Solo un administrador puede editar el sueldo y el día de cobro.");
+        if (!esAdmin()) throw new AccessDeniedException("Solo un administrador puede editar el sueldo y el día de cobro.");
         RrhhLegajoDigital legajo = legajoRepository.findDetalleByUserId(user.getId()).orElse(null);
         if (legajo == null) {
             if (sueldo == null) throw new IllegalArgumentException("Registra el sueldo base para abrir el legajo.");

@@ -66,6 +66,7 @@ public class ReembolsoServiceImpl implements ReembolsoService {
         // FOR UPDATE sobre la devolución: evita dos reembolsos simultáneos de la misma devolución
         Devolucion dev = devolucionRepository.findByIdParaActualizar(r.devolucionId())
                 .orElseThrow(() -> new ResourceNotFoundException("Devolución no encontrada: " + r.devolucionId()));
+        exigirAccesoSede(actual, dev.getSede());
         if (dev.getEstado() != EstadoDevolucion.APROBADA) {
             throw new IllegalStateException("Solo se reembolsa una devolución APROBADA (estado: " + dev.getEstado() + ")");
         }
@@ -107,8 +108,10 @@ public class ReembolsoServiceImpl implements ReembolsoService {
     @Override
     @Transactional(readOnly = true)
     public ReembolsoResponseDTO obtener(UUID id) {
-        return reembolsoRepository.findDetalleById(id).map(mapper::toResponseDto)
+        Reembolso reembolso = reembolsoRepository.findDetalleById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Reembolso no encontrado: " + id));
+        exigirAccesoSede(usuarioActual(), reembolso.getDevolucion().getSede());
+        return mapper.toResponseDto(reembolso);
     }
 
     @Override
@@ -118,7 +121,8 @@ public class ReembolsoServiceImpl implements ReembolsoService {
         if (desde != null && hasta != null && desde.isAfter(hasta)) {
             throw new IllegalArgumentException("La fecha 'desde' no puede ser posterior a 'hasta'");
         }
-        return reembolsoRepository.search(sedeId, estado, metodo,
+        UUID sedePermitida = sedeSolicitadaConAcceso(sedeId);
+        return reembolsoRepository.search(sedePermitida, estado, metodo,
                         desde != null ? desde.atStartOfDay() : FECHA_MIN,
                         hasta != null ? hasta.plusDays(1).atStartOfDay() : FECHA_MAX, pageable)
                 .map(mapper::toResponseDto);
@@ -201,6 +205,21 @@ public class ReembolsoServiceImpl implements ReembolsoService {
         if (user.getRol() == null || user.getRol().getNombre() != RolNombre.ROLE_ADMIN) {
             throw new AccessDeniedException("Solo un administrador puede procesar reembolsos");
         }
+    }
+
+    private void exigirAccesoSede(User user, Sede sede) {
+        if (user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN) return;
+        if (user.getSede() == null || sede == null || !user.getSede().getId().equals(sede.getId())) {
+            throw new AccessDeniedException("No tiene acceso a otra sede");
+        }
+    }
+
+    private UUID sedeSolicitadaConAcceso(UUID sedeId) {
+        User user = usuarioActual();
+        if (user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN) return sedeId;
+        if (user.getSede() == null || user.getSede().getId() == null) throw new AccessDeniedException("Su usuario no tiene una sede asignada");
+        if (sedeId != null && !user.getSede().getId().equals(sedeId)) throw new AccessDeniedException("No tiene acceso a otra sede");
+        return user.getSede().getId();
     }
 
     private User usuarioActual() {

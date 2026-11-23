@@ -215,12 +215,15 @@ class TurnoCajaServiceImplTest {
     }
 
     @Test
-    void cerrar_turnoDeOtroUsuario_lanzaIllegalState() {
+    void cerrar_turnoDeOtroUsuario_lanzaAccessDenied() {
         TurnoCaja t = turnoAbierto("0.00");
         t.setUser(User.builder().id(UUID.randomUUID()).build());
 
-        assertThrows(IllegalStateException.class, () -> service.cerrar(t.getId(), new CierreCajaRequestDTO(BigDecimal.ZERO, null)));
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> service.cerrar(t.getId(), new CierreCajaRequestDTO(BigDecimal.ZERO, null)));
         assertEquals(EstadoTurno.ABIERTO, t.getEstado());
+        verify(turnoRepository, never()).save(any());
+        verifyNoInteractions(auditService);
     }
 
     @Test

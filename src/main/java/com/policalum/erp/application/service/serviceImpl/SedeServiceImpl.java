@@ -45,6 +45,7 @@ public class SedeServiceImpl implements SedeService {
     @Transactional
     @CacheEvict(value = "sedes", allEntries = true)
     public SedeResponseDTO crearSede(SedeRequestDTO request) {
+        exigirAdmin(usuarioActual());
         List<String> diasLaborables = validarPoliticaDeSede(request);
         Sede sede = sedeMapper.toEntity(request);
         sede.setDiasLaborables(diasLaborables);
@@ -68,7 +69,6 @@ public class SedeServiceImpl implements SedeService {
     }
 
     @Override
-    @org.springframework.cache.annotation.Cacheable(value = "sedes", key = "#activa + '-' + #pageable.pageNumber + '-' + #pageable.pageSize")
     public Page<SedeResponseDTO> listarPorEstado(Boolean activa, Pageable pageable) {
         User actual = usuarioActual();
         if (!esAdmin(actual)) {
@@ -96,6 +96,7 @@ public class SedeServiceImpl implements SedeService {
     public SedeResponseDTO actualizarSede(UUID id, SedeRequestDTO request) {
         Sede sedeExistente = sedeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("No se puede actualizar. Sede no encontrada con ID: " + id));
+        exigirAdmin(usuarioActual());
 
         List<String> diasLaborables = validarPoliticaDeSede(request);
         sedeMapper.updateEntityFromDto(request, sedeExistente);
@@ -141,6 +142,7 @@ public class SedeServiceImpl implements SedeService {
     public SedeResponseDTO guardarImagen(UUID id, MultipartFile archivo) {
         Sede sede = sedeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sede no encontrada con ID: " + id));
+        exigirAdmin(usuarioActual());
         String nombre = archivo == null || archivo.getOriginalFilename() == null ? "" : archivo.getOriginalFilename().toLowerCase(Locale.ROOT);
         if (!(nombre.endsWith(".jpg") || nombre.endsWith(".jpeg") || nombre.endsWith(".png") || nombre.endsWith(".webp"))) {
             throw new ValidationException("La imagen de la sede debe ser JPG, PNG o WEBP");
@@ -160,6 +162,7 @@ public class SedeServiceImpl implements SedeService {
     public SedeResponseDTO eliminarSede(UUID id) {
         Sede sede = sedeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("No se puede eliminar. Sede no encontrada con ID: " + id));
+        exigirAdmin(usuarioActual());
         if (sedeRepository.tieneHistorial(id)) {
             if (Boolean.FALSE.equals(sede.getActiva())) {
                 throw new ValidationException("La sede tiene historial y permanece inactiva");
@@ -204,6 +207,10 @@ public class SedeServiceImpl implements SedeService {
         if (!esAdmin(user) && (user.getSede() == null || !user.getSede().getId().equals(sede.getId()))) {
             throw new AccessDeniedException("No tiene acceso a otra sede");
         }
+    }
+
+    private void exigirAdmin(User user) {
+        if (!esAdmin(user)) throw new AccessDeniedException("Solo un administrador puede gestionar sedes");
     }
 
     private User usuarioActual() {

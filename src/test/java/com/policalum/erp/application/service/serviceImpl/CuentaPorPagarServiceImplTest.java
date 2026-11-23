@@ -42,7 +42,8 @@ class CuentaPorPagarServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        admin = User.builder().id(UUID.randomUUID()).nombre("Miguel").apellido("Dueño").email(EMAIL).build();
+        admin = User.builder().id(UUID.randomUUID()).nombre("Miguel").apellido("Dueño").email(EMAIL)
+                .rol(Rol.builder().nombre(RolNombre.ROLE_ADMIN).build()).build();
         SecurityContext context = mock(SecurityContext.class);
         Authentication auth = mock(Authentication.class);
         lenient().when(auth.getName()).thenReturn(EMAIL);

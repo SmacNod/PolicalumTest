@@ -294,7 +294,7 @@ class DevolucionServiceImplTest {
 
     @Test
     void porVenta_ventaInexistente_lanzaNotFound() {
-        when(ventaRepository.existsById(ventaId)).thenReturn(false);
+        when(ventaRepository.findById(ventaId)).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class, () -> service.porVenta(ventaId));
     }
 

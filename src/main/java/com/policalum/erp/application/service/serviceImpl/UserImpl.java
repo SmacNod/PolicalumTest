@@ -54,7 +54,7 @@ public class UserImpl implements UserService {
     public UserResponseDTO createUser(UserRequestDTO userRequestDTO) {
 
         if (userRepository.findByEmail(userRequestDTO.email()).isPresent()) {
-            throw new IllegalArgumentException("El correo ya está registrado");
+            throw new IllegalStateException("El correo ya está registrado");
         }
 
         User user = userMapper.toEntity(userRequestDTO);
@@ -111,6 +111,10 @@ public class UserImpl implements UserService {
                                 "Usuario no encontrado"
                         )
                 );
+
+        userRepository.findByEmail(dto.email())
+                .filter(otro -> !otro.getId().equals(id))
+                .ifPresent(otro -> { throw new IllegalStateException("El correo ya está registrado"); });
 
         String correoPrevio = existingUser.getEmail();
         String currentPasswordHash = existingUser.getPasswordHash();

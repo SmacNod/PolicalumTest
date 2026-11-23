@@ -8,6 +8,9 @@ import com.policalum.erp.application.dto.request.SedeRequestDTO;
 import com.policalum.erp.application.mapper.SedeMapper;
 import com.policalum.erp.application.service.FileStorageService;
 import com.policalum.erp.domain.model.Sede;
+import com.policalum.erp.domain.model.User;
+import com.policalum.erp.domain.model.Rol;
+import com.policalum.erp.domain.enums.RolNombre;
 import com.policalum.erp.exception.ResourceNotFoundException;
 import com.policalum.erp.infrastructure.repository.SedeRepository;
 import jakarta.validation.ValidationException;
@@ -17,6 +20,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /** Sedes: valores por defecto Perú / PEN / activa. */
 @ExtendWith(MockitoExtension.class)
@@ -25,14 +31,25 @@ class SedeServiceImplTest {
     @Mock SedeRepository sedeRepository;
     @Mock SedeMapper sedeMapper;
     @Mock FileStorageService fileStorageService;
+    @Mock com.policalum.erp.infrastructure.repository.UserRepository userRepository;
     @InjectMocks SedeServiceImpl service;
 
     UUID id = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
+        User admin = User.builder().id(UUID.randomUUID()).email("admin@test").rol(Rol.builder().nombre(RolNombre.ROLE_ADMIN).build()).build();
+        SecurityContext context = mock(SecurityContext.class);
+        Authentication auth = mock(Authentication.class);
+        lenient().when(auth.getName()).thenReturn("admin@test");
+        lenient().when(context.getAuthentication()).thenReturn(auth);
+        SecurityContextHolder.setContext(context);
+        lenient().when(userRepository.findByEmailAndActivoTrue("admin@test")).thenReturn(Optional.of(admin));
         lenient().when(sedeRepository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
+
+    @AfterEach
+    void tearDown() { SecurityContextHolder.clearContext(); }
 
     private SedeRequestDTO request() {
         return new SedeRequestDTO("Trujillo Centro", null, "Trujillo", "Jr. Pizarro 1", "944111222", null, null, null, null, null,

@@ -91,6 +91,7 @@ public class DevolucionServiceImpl implements DevolucionService {
         // FOR UPDATE sobre la venta: dos devoluciones simultáneas no pueden pasarse del tope
         Venta venta = ventaRepository.findByIdParaActualizar(r.ventaId())
                 .orElseThrow(() -> new ResourceNotFoundException("Venta no encontrada: " + r.ventaId()));
+        exigirAccesoSede(actual, venta.getSede());
         if (venta.getEstado() != EstadoVenta.COMPLETADA) {
             throw new IllegalStateException("Solo se puede devolver una venta COMPLETADA (estado: " + venta.getEstado() + ")");
         }
@@ -162,6 +163,7 @@ public class DevolucionServiceImpl implements DevolucionService {
     public DevolucionResponseDTO obtener(UUID id) {
         Devolucion d = devolucionRepository.findDetalleById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Devolución no encontrada: " + id));
+        exigirAccesoSede(usuarioActual(), d.getSede());
         return respuesta(d, detalleRepository.findByDevolucion_Id(id));
     }
 
@@ -170,14 +172,17 @@ public class DevolucionServiceImpl implements DevolucionService {
     public Page<DevolucionListadoDTO> buscar(UUID sedeId, EstadoDevolucion estado, UUID ventaId,
                                              LocalDate desde, LocalDate hasta, Pageable pageable) {
         validarRango(desde, hasta);
-        return devolucionRepository.search(sedeId, estado, ventaId, inicio(desde), finExclusivo(hasta), pageable)
+        UUID sedePermitida = sedeSolicitadaConAcceso(sedeId);
+        return devolucionRepository.search(sedePermitida, estado, ventaId, inicio(desde), finExclusivo(hasta), pageable)
                 .map(mapper::toListadoDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<DevolucionListadoDTO> porVenta(UUID ventaId) {
-        if (!ventaRepository.existsById(ventaId)) throw new ResourceNotFoundException("Venta no encontrada: " + ventaId);
+        Venta venta = ventaRepository.findById(ventaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Venta no encontrada: " + ventaId));
+        exigirAccesoSede(usuarioActual(), venta.getSede());
         return devolucionRepository.findByVenta_IdOrderByFechaSolicitudDesc(ventaId).stream()
                 .map(mapper::toListadoDto).toList();
     }
@@ -354,6 +359,21 @@ public class DevolucionServiceImpl implements DevolucionService {
         if (user.getRol() == null || user.getRol().getNombre() != RolNombre.ROLE_ADMIN) {
             throw new AccessDeniedException("Solo un administrador puede resolver devoluciones o ver su dashboard");
         }
+    }
+
+    private void exigirAccesoSede(User user, com.policalum.erp.domain.model.Sede sede) {
+        if (user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN) return;
+        if (user.getSede() == null || sede == null || !user.getSede().getId().equals(sede.getId())) {
+            throw new AccessDeniedException("No tiene acceso a otra sede");
+        }
+    }
+
+    private UUID sedeSolicitadaConAcceso(UUID sedeId) {
+        User user = usuarioActual();
+        if (user.getRol() != null && user.getRol().getNombre() == RolNombre.ROLE_ADMIN) return sedeId;
+        if (user.getSede() == null || user.getSede().getId() == null) throw new AccessDeniedException("Su usuario no tiene una sede asignada");
+        if (sedeId != null && !user.getSede().getId().equals(sedeId)) throw new AccessDeniedException("No tiene acceso a otra sede");
+        return user.getSede().getId();
     }
 
     private User usuarioActual() {

@@ -57,6 +57,8 @@ public interface AlmacenRepository extends JpaRepository<Almacen, UUID> {
 
     long countBySede_Id(UUID sedeId);
 
+    long countBySede_IdAndActivo(UUID sedeId, Boolean activo);
+
     /**
      * El almacén figura en stock, kardex, ajustes, transferencias, compras o devoluciones.
      * En ese caso no se borra: se desactiva para conservar el historial.

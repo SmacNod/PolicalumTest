@@ -7,6 +7,7 @@ import com.policalum.erp.application.service.FileStorageService;
 import com.policalum.erp.domain.enums.AccionAudit;
 import com.policalum.erp.domain.model.Compra;
 import com.policalum.erp.domain.model.CompraAdjunto;
+import com.policalum.erp.domain.model.Sede;
 import com.policalum.erp.domain.model.User;
 import com.policalum.erp.exception.FileStorageException;
 import com.policalum.erp.exception.ResourceNotFoundException;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -46,6 +48,7 @@ public class CompraAdjuntoServiceImpl implements CompraAdjuntoService {
     public CompraAdjuntoResponseDTO subir(UUID compraId, MultipartFile archivo, String tipo) {
         Compra compra = compraRepository.findById(compraId)
                 .orElseThrow(() -> new ResourceNotFoundException("Compra no encontrada: " + compraId));
+        exigirAccesoSede(compra.getSede());
 
         String tipoNormalizado = tipo != null ? tipo.trim().toUpperCase() : "OTRO";
         if (!props.getAllowedTypes().contains(tipoNormalizado)) {
@@ -78,6 +81,9 @@ public class CompraAdjuntoServiceImpl implements CompraAdjuntoService {
     @Override
     @Transactional(readOnly = true)
     public List<CompraAdjuntoResponseDTO> listar(UUID compraId) {
+        Compra compra = compraRepository.findById(compraId)
+                .orElseThrow(() -> new ResourceNotFoundException("Compra no encontrada: " + compraId));
+        exigirAccesoSede(compra.getSede());
         return adjuntoRepository.findByCompra_IdOrderByCreatedAtDesc(compraId)
                 .stream().map(this::toDto).toList();
     }
@@ -112,9 +118,18 @@ public class CompraAdjuntoServiceImpl implements CompraAdjuntoService {
         CompraAdjunto adjunto = adjuntoRepository.findById(adjuntoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Adjunto no encontrado: " + adjuntoId));
         if (!adjunto.getCompra().getId().equals(compraId)) {
-            throw new FileStorageException("El adjunto no pertenece a la compra indicada");
+            throw new ResourceNotFoundException("Adjunto no encontrado: " + adjuntoId);
         }
+        exigirAccesoSede(adjunto.getCompra().getSede());
         return adjunto;
+    }
+
+    private void exigirAccesoSede(Sede sede) {
+        User actual = usuarioActual();
+        if (actual.getRol() != null && actual.getRol().getNombre() == com.policalum.erp.domain.enums.RolNombre.ROLE_ADMIN) return;
+        if (actual.getSede() == null || sede == null || !actual.getSede().getId().equals(sede.getId())) {
+            throw new AccessDeniedException("No tiene acceso a otra sede");
+        }
     }
 
     private User usuarioActual() {

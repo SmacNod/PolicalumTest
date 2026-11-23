@@ -41,6 +41,8 @@ public interface FinanzasCuentaPorPagarRepository extends JpaRepository<Finanzas
 
     long countByEstado(EstadoCxP estado);
 
+    long countBySede_IdAndEstado(UUID sedeId, EstadoCxP estado);
+
     // ============ Módulo 6 ============
 
     /** FOR UPDATE: dos pagos simultáneos no deben superar el saldo. */

@@ -7,9 +7,13 @@ import static org.mockito.Mockito.*;
 import com.policalum.erp.application.dto.request.AlmacenRequestDTO;
 import com.policalum.erp.application.mapper.AlmacenMapper;
 import com.policalum.erp.domain.model.Almacen;
+import com.policalum.erp.domain.model.Rol;
 import com.policalum.erp.domain.model.Sede;
+import com.policalum.erp.domain.model.User;
 import com.policalum.erp.exception.ResourceNotFoundException;
 import com.policalum.erp.infrastructure.repository.AlmacenRepository;
+import com.policalum.erp.infrastructure.repository.SedeRepository;
+import com.policalum.erp.infrastructure.repository.UserRepository;
 import jakarta.validation.ValidationException;
 import java.util.*;
 import org.junit.jupiter.api.*;
@@ -17,6 +21,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /** Almacenes: nombre único dentro de cada sede. */
 @ExtendWith(MockitoExtension.class)
@@ -24,8 +31,11 @@ class AlmacenServiceImplTest {
 
     @Mock AlmacenRepository almacenRepository;
     @Mock AlmacenMapper almacenMapper;
+    @Mock SedeRepository sedeRepository;
+    @Mock UserRepository userRepository;
     @InjectMocks AlmacenServiceImpl service;
 
+    User usuario;
     Sede sede;
     Almacen principal;
 
@@ -33,8 +43,22 @@ class AlmacenServiceImplTest {
     void setUp() {
         sede = Sede.builder().id(UUID.randomUUID()).build();
         principal = Almacen.builder().id(UUID.randomUUID()).nombre("Principal").sede(sede).build();
+        usuario = User.builder().id(UUID.randomUUID()).email("operador@policalum.com")
+                .sede(sede).rol(Rol.builder().nombre(com.policalum.erp.domain.enums.RolNombre.ROLE_MULTIFUNCIONAL).build()).build();
+        SecurityContext context = mock(SecurityContext.class);
+        Authentication authentication = mock(Authentication.class);
+        lenient().when(authentication.getName()).thenReturn(usuario.getEmail());
+        lenient().when(context.getAuthentication()).thenReturn(authentication);
+        SecurityContextHolder.setContext(context);
+        lenient().when(userRepository.findByEmailAndActivoTrue(usuario.getEmail())).thenReturn(Optional.of(usuario));
+        lenient().when(sedeRepository.findById(sede.getId())).thenReturn(Optional.of(sede));
         lenient().when(almacenRepository.findWithSedeById(principal.getId())).thenReturn(Optional.of(principal));
         lenient().when(almacenRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     private AlmacenRequestDTO request(String nombre) {
@@ -62,6 +86,16 @@ class AlmacenServiceImplTest {
     }
 
     @Test
+    void create_sedeAjena_lanzaAccessDenied_yNoGuarda() {
+        Sede ajena = Sede.builder().id(UUID.randomUUID()).build();
+        when(sedeRepository.findById(ajena.getId())).thenReturn(Optional.of(ajena));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> service.create(new AlmacenRequestDTO(ajena, "Ajeno", true, null)));
+        verify(almacenRepository, never()).save(any());
+    }
+
+    @Test
     void update_mismoNombre_permitido() {
         when(almacenRepository.findBySede_IdAndNombreIgnoreCase(sede.getId(), "Principal")).thenReturn(Optional.of(principal));
 
@@ -85,6 +119,18 @@ class AlmacenServiceImplTest {
         when(almacenRepository.findWithSedeById(x)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.update(x, request("A")));
+    }
+
+    @Test
+    void findById_almacenDeOtraSede_lanzaAccessDenied() {
+        Sede ajena = Sede.builder().id(UUID.randomUUID()).build();
+        Almacen almacenAjeno = Almacen.builder().id(UUID.randomUUID()).sede(ajena).build();
+        when(almacenRepository.findWithSedeById(almacenAjeno.getId())).thenReturn(Optional.of(almacenAjeno));
+        when(sedeRepository.findById(ajena.getId())).thenReturn(Optional.of(ajena));
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> service.findById(almacenAjeno.getId()));
+        verifyNoInteractions(almacenMapper);
     }
 
     @Test
@@ -133,9 +179,9 @@ class AlmacenServiceImplTest {
 
     @Test
     void getDashboardStatistics_cuentaActivos() {
-        when(almacenRepository.count()).thenReturn(3L);
-        when(almacenRepository.countByActivo(true)).thenReturn(2L);
-        when(almacenRepository.countByActivo(false)).thenReturn(1L);
+        when(almacenRepository.countBySede_Id(sede.getId())).thenReturn(3L);
+        when(almacenRepository.countBySede_IdAndActivo(sede.getId(), true)).thenReturn(2L);
+        when(almacenRepository.countBySede_IdAndActivo(sede.getId(), false)).thenReturn(1L);
 
         assertEquals(Map.of("totalAlmacenes", 3L, "almacenesActivos", 2L, "almacenesInactivos", 1L), service.getDashboardStatistics());
     }

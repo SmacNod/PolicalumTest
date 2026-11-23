@@ -36,7 +36,9 @@ public class CajaChicaServiceImpl {
         TurnoCaja turno = turnoRepository.findById(turnoId).orElseThrow(() -> new ResourceNotFoundException("Turno no encontrado"));
         User user = usuario();
         if (turno.getEstado() != EstadoTurno.ABIERTO) throw new IllegalStateException("La caja chica solo se mueve con el turno abierto");
-        if (!turno.getUser().getId().equals(user.getId())) throw new IllegalStateException("Solo el responsable del turno registra caja chica");
+        if (!turno.getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("Solo el responsable del turno registra caja chica");
+        }
         MovimientoCajaChica movimiento = MovimientoCajaChica.builder()
                 .turno(turno).user(user).tipo(request.tipo()).concepto(request.concepto())
                 .monto(request.monto()).detalle(request.detalle() == null ? null : request.detalle().trim())
