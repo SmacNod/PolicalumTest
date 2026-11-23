@@ -28,7 +28,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * <p>Se puede sobrescribir con {@code POLICALUM_TEST_DB_URL} para apuntarla a otra base.
  */
 @SpringBootTest(properties = {
-        "spring.datasource.url=${POLICALUM_TEST_DB_URL:jdbc:postgresql://127.0.0.1:5432/ERPpoli}",
+        "spring.datasource.url=${POLICALUM_TEST_DB_URL:jdbc:postgresql://127.0.0.1:5433/ERPpoli}",
         "spring.datasource.username=${POLICALUM_TEST_DB_USERNAME:postgres}",
         "spring.datasource.password=${POLICALUM_TEST_DB_PASSWORD:postgre}",
         "spring.jpa.hibernate.ddl-auto=validate",
